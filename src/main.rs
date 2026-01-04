@@ -1,14 +1,21 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
 use chrono::NaiveDate;
 use clap::{Parser, Subcommand};
 
 use pint::commands::{self, transactions::Filters};
+use pint::config;
 
 #[derive(Parser)]
 #[command(name = "pint")]
 #[command(about = "Personal finance transaction manager using SimpleFIN")]
 #[command(version)]
 struct Cli {
+    /// Data directory (default: ~/.local/share/pint or $PINT_DATA_DIR)
+    #[arg(long, global = true, env = "PINT_DATA_DIR")]
+    data_dir: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -107,6 +114,11 @@ enum CategorizeAction {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Set custom data directory if provided
+    if let Some(data_dir) = cli.data_dir {
+        config::set_data_dir(data_dir);
+    }
 
     match cli.command {
         Commands::Init => commands::init::run(),

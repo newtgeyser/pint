@@ -5,7 +5,7 @@ edition = "2024"
 description = "Personal finance transaction manager using SimpleFIN"
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 serde = { version = "1", features = ["derive"] }
