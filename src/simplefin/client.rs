@@ -85,9 +85,17 @@ impl SimpleFin {
             );
         }
 
-        let account_set: AccountSet = response
-            .json()
-            .context("Failed to parse account data")?;
+        let text = response.text().context("Failed to read response")?;
+
+        // Debug: print raw response if PINT_DEBUG is set
+        if std::env::var("PINT_DEBUG").is_ok() {
+            eprintln!("=== RAW SIMPLEFIN RESPONSE ===");
+            eprintln!("{}", text);
+            eprintln!("=== END RESPONSE ===");
+        }
+
+        let account_set: AccountSet =
+            serde_json::from_str(&text).context("Failed to parse account data")?;
 
         if !account_set.errors.is_empty() {
             eprintln!("SimpleFIN warnings:");
