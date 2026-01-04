@@ -36,7 +36,11 @@ enum Commands {
     },
 
     /// Backfill historical transactions (up to ~2 years)
-    Backfill,
+    Backfill {
+        /// Start from this date instead of today (YYYY-MM-DD)
+        #[arg(long)]
+        from: Option<String>,
+    },
 
     /// List accounts
     Accounts,
@@ -133,7 +137,13 @@ fn main() -> Result<()> {
             commands::sync::run(days)
         }
 
-        Commands::Backfill => commands::sync::run_backfill(),
+        Commands::Backfill { from } => {
+            let from = from
+                .as_ref()
+                .map(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d"))
+                .transpose()?;
+            commands::sync::run_backfill(from)
+        }
 
         Commands::Accounts => commands::accounts::run(),
 

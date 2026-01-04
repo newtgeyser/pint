@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use chrono::{Duration, Utc};
+use chrono::{Duration, NaiveDate, TimeZone, Utc};
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::{db, rules, simplefin::{SimpleFin, AccountSet}};
@@ -37,21 +37,29 @@ pub fn run(days: u32) -> Result<()> {
     Ok(())
 }
 
-pub fn run_backfill() -> Result<()> {
+pub fn run_backfill(from: Option<NaiveDate>) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
     let access_url = get_access_url(&conn)?;
     let client = SimpleFin::new(access_url);
 
-    let now = Utc::now();
-    let mut end = now;
+    let mut end = match from {
+        Some(date) => Utc.from_utc_datetime(&date.and_hms_opt(23, 59, 59).unwrap()),
+        None => Utc::now(),
+    };
     let mut total_inserted = 0;
     let mut total_updated = 0;
     let mut requests = 0;
 
-    println!(
-        "Backfilling transactions (up to {} requests, {} days each)...",
-        BACKFILL_MAX_REQUESTS, BACKFILL_CHUNK_DAYS
-    );
+    match from {
+        Some(date) => println!(
+            "Backfilling from {} (up to {} requests, {} days each)...",
+            date, BACKFILL_MAX_REQUESTS, BACKFILL_CHUNK_DAYS
+        ),
+        None => println!(
+            "Backfilling transactions (up to {} requests, {} days each)...",
+            BACKFILL_MAX_REQUESTS, BACKFILL_CHUNK_DAYS
+        ),
+    }
 
     while requests < BACKFILL_MAX_REQUESTS {
         let start = end - Duration::days(BACKFILL_CHUNK_DAYS);
