@@ -79,6 +79,13 @@ enum Commands {
         limit: Option<usize>,
     },
 
+    /// List holdings (investment positions)
+    Holdings {
+        /// Filter by account name or ID
+        #[arg(short, long)]
+        account: Option<String>,
+    },
+
     /// List categories
     Categories,
 
@@ -193,6 +200,10 @@ fn main() -> Result<()> {
                 uncategorized,
                 limit,
             })
+        }
+
+        Commands::Holdings { account } => {
+            commands::holdings::run(account.as_deref())
         }
 
         Commands::Categories => commands::categories::run(),

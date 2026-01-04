@@ -101,3 +101,42 @@ impl MerchantRule {
         })
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct Holding {
+    pub id: String,
+    pub account_id: String,
+    pub symbol: Option<String>,
+    pub description: Option<String>,
+    pub shares: String,
+    pub cost_basis: Option<i64>,
+    pub market_value: Option<i64>,
+    pub currency: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+impl Holding {
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get("id")?,
+            account_id: row.get("account_id")?,
+            symbol: row.get("symbol")?,
+            description: row.get("description")?,
+            shares: row.get("shares")?,
+            cost_basis: row.get("cost_basis")?,
+            market_value: row.get("market_value")?,
+            currency: row.get("currency")?,
+            created_at: row.get("created_at")?,
+            updated_at: row.get("updated_at")?,
+        })
+    }
+
+    pub fn cost_basis_dollars(&self) -> Option<f64> {
+        self.cost_basis.map(|cents| cents as f64 / 100.0)
+    }
+
+    pub fn market_value_dollars(&self) -> Option<f64> {
+        self.market_value.map(|cents| cents as f64 / 100.0)
+    }
+}

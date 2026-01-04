@@ -13,6 +13,7 @@ struct SyncStats {
     accounts: usize,
     inserted: usize,
     updated: usize,
+    holdings: usize,
 }
 
 pub fn run(days: u32) -> Result<()> {
@@ -28,10 +29,14 @@ pub fn run(days: u32) -> Result<()> {
     let account_set = client.fetch_accounts(Some(start.timestamp()), Some(now.timestamp()))?;
     let stats = import_accounts(&conn, &account_set)?;
 
-    println!(
+    let mut summary = format!(
         "Synced {} accounts, {} new transactions, {} updated",
         stats.accounts, stats.inserted, stats.updated
     );
+    if stats.holdings > 0 {
+        summary.push_str(&format!(", {} holdings", stats.holdings));
+    }
+    println!("{}", summary);
 
     auto_categorize(&conn)?;
     Ok(())
@@ -113,9 +118,13 @@ fn import_accounts(conn: &Connection, account_set: &AccountSet) -> Result<SyncSt
     let mut accounts_updated = 0;
     let mut transactions_inserted = 0;
     let mut transactions_updated = 0;
+    let mut holdings_updated = 0;
 
     for account in &account_set.accounts {
         let institution = account.institution_name();
+
+        // Determine account type: use detected type, or upgrade to brokerage if has holdings
+        let account_type = account.account_type();
 
         conn.execute(
             "INSERT INTO accounts (id, name, institution, account_type, balance, balance_date, currency, created_at, updated_at)
@@ -135,7 +144,7 @@ fn import_accounts(conn: &Connection, account_set: &AccountSet) -> Result<SyncSt
                 account.id,
                 account.name,
                 institution,
-                account.account_type(),
+                account_type,
                 account.balance_cents(),
                 account.balance_date,
                 account.currency.as_deref().unwrap_or("USD"),
@@ -149,12 +158,19 @@ fn import_accounts(conn: &Connection, account_set: &AccountSet) -> Result<SyncSt
             transactions_inserted += inserted;
             transactions_updated += updated;
         }
+
+        // Import holdings
+        for holding in &account.holdings {
+            import_holding(conn, &account.id, holding, now_ts)?;
+            holdings_updated += 1;
+        }
     }
 
     Ok(SyncStats {
         accounts: accounts_updated,
         inserted: transactions_inserted,
         updated: transactions_updated,
+        holdings: holdings_updated,
     })
 }
 
@@ -194,6 +210,39 @@ fn import_transaction(
     )?;
 
     Ok(((!existed) as usize, existed as usize))
+}
+
+fn import_holding(
+    conn: &Connection,
+    account_id: &str,
+    holding: &crate::simplefin::Holding,
+    now_ts: i64,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO holdings (id, account_id, symbol, description, shares, cost_basis, market_value, currency, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)
+         ON CONFLICT(id) DO UPDATE SET
+            account_id = excluded.account_id,
+            symbol = excluded.symbol,
+            description = excluded.description,
+            shares = excluded.shares,
+            cost_basis = excluded.cost_basis,
+            market_value = excluded.market_value,
+            currency = excluded.currency,
+            updated_at = excluded.updated_at",
+        rusqlite::params![
+            holding.id,
+            account_id,
+            holding.symbol,
+            holding.description,
+            holding.shares.as_deref().unwrap_or("0"),
+            holding.cost_basis_cents(),
+            holding.market_value_cents(),
+            holding.currency.as_deref().unwrap_or("USD"),
+            now_ts,
+        ],
+    )?;
+    Ok(())
 }
 
 fn auto_categorize(conn: &Connection) -> Result<()> {

@@ -74,6 +74,22 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS holdings (
+            id TEXT PRIMARY KEY,
+            account_id TEXT NOT NULL REFERENCES accounts(id),
+            symbol TEXT,
+            description TEXT,
+            shares TEXT NOT NULL,
+            cost_basis INTEGER,
+            market_value INTEGER,
+            currency TEXT DEFAULT 'USD',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_holdings_account
+            ON holdings(account_id);
         ",
     )?;
 
@@ -115,6 +131,27 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     // Index creation must happen after ensuring the column exists (older DBs).
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);",
+    )?;
+
+    // Create holdings table if it doesn't exist (for existing databases)
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS holdings (
+            id TEXT PRIMARY KEY,
+            account_id TEXT NOT NULL REFERENCES accounts(id),
+            symbol TEXT,
+            description TEXT,
+            shares TEXT NOT NULL,
+            cost_basis INTEGER,
+            market_value INTEGER,
+            currency TEXT DEFAULT 'USD',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_holdings_account
+            ON holdings(account_id);
+        ",
     )?;
 
     // Remove the overly-aggressive UNIQUE(account_id, posted, amount, description) constraint

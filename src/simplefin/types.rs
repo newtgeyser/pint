@@ -22,7 +22,25 @@ pub struct Account {
     #[serde(default)]
     pub transactions: Vec<Transaction>,
     #[serde(default)]
+    pub holdings: Vec<Holding>,
+    #[serde(default)]
     pub extra: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Holding {
+    pub id: String,
+    pub created: Option<i64>,
+    pub currency: Option<String>,
+    #[serde(rename = "cost_basis")]
+    pub cost_basis: Option<String>,
+    pub description: Option<String>,
+    #[serde(rename = "market_value")]
+    pub market_value: Option<String>,
+    #[serde(rename = "purchase_price")]
+    pub purchase_price: Option<String>,
+    pub shares: Option<String>,
+    pub symbol: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,7 +80,17 @@ impl Account {
                 }
             }
         }
+
+        // If account has holdings, it's likely a brokerage account
+        if !self.holdings.is_empty() {
+            return "brokerage";
+        }
+
         "unknown"
+    }
+
+    pub fn has_holdings(&self) -> bool {
+        !self.holdings.is_empty()
     }
 }
 
@@ -86,6 +114,16 @@ impl Transaction {
             "Invalid transaction amount '{}' for transaction id {}",
             self.amount, self.id
         ))
+    }
+}
+
+impl Holding {
+    pub fn cost_basis_cents(&self) -> Option<i64> {
+        self.cost_basis.as_ref().and_then(|s| parse_amount_to_cents(s))
+    }
+
+    pub fn market_value_cents(&self) -> Option<i64> {
+        self.market_value.as_ref().and_then(|s| parse_amount_to_cents(s))
     }
 }
 
