@@ -1,34 +1,128 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
+use chrono::Utc;
+use rusqlite::OptionalExtension;
+use std::cmp::Ordering;
 
 use crate::db::{self, models::Holding};
 use crate::util::truncate;
 
-pub fn run(account_filter: Option<&str>) -> Result<()> {
+/// Update account balance to sum of holdings market values
+fn update_account_balance(conn: &rusqlite::Connection, account_id: &str) -> Result<()> {
+    let now = Utc::now().timestamp();
+    conn.execute(
+        "UPDATE accounts SET
+            balance = (SELECT COALESCE(SUM(market_value), 0) FROM holdings WHERE account_id = ?1),
+            balance_date = ?2,
+            updated_at = ?2
+         WHERE id = ?1",
+        rusqlite::params![account_id, now],
+    )?;
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum SortColumn {
+    Symbol,
+    Description,
+    Shares,
+    Price,
+    Value,
+    Gain,
+    Loss,
+}
+
+fn parse_sort_column(s: &str) -> Result<SortColumn> {
+    match s.to_lowercase().as_str() {
+        "symbol" => Ok(SortColumn::Symbol),
+        "description" | "desc" => Ok(SortColumn::Description),
+        "shares" => Ok(SortColumn::Shares),
+        "price" => Ok(SortColumn::Price),
+        "value" => Ok(SortColumn::Value),
+        "gain" | "gain/loss" => Ok(SortColumn::Gain),
+        "loss" => Ok(SortColumn::Loss),
+        other => bail!(
+            "Unknown sort column '{}'. Valid: symbol, description, shares, price, value, gain, loss",
+            other
+        ),
+    }
+}
+
+fn gain_pct(holding: &Holding) -> Option<f64> {
+    match (holding.cost_basis, holding.market_value) {
+        (Some(cost), Some(value)) if cost > 0 => {
+            Some(((value - cost) as f64 / cost as f64) * 100.0)
+        }
+        _ => None,
+    }
+}
+
+fn compare_holdings(a: &Holding, b: &Holding, sort_by: SortColumn) -> Ordering {
+    match sort_by {
+        SortColumn::Symbol => {
+            let a_sym = a.symbol.as_deref().unwrap_or("");
+            let b_sym = b.symbol.as_deref().unwrap_or("");
+            a_sym.to_lowercase().cmp(&b_sym.to_lowercase())
+        }
+        SortColumn::Description => {
+            let a_desc = a.description.as_deref().unwrap_or("");
+            let b_desc = b.description.as_deref().unwrap_or("");
+            a_desc.to_lowercase().cmp(&b_desc.to_lowercase())
+        }
+        SortColumn::Shares => {
+            let a_shares: f64 = a.shares.replace(',', "").parse().unwrap_or(0.0);
+            let b_shares: f64 = b.shares.replace(',', "").parse().unwrap_or(0.0);
+            b_shares.partial_cmp(&a_shares).unwrap_or(Ordering::Equal)
+        }
+        SortColumn::Price => {
+            let a_price = a.price.unwrap_or(0);
+            let b_price = b.price.unwrap_or(0);
+            b_price.cmp(&a_price)
+        }
+        SortColumn::Value => {
+            let a_val = a.market_value.unwrap_or(0);
+            let b_val = b.market_value.unwrap_or(0);
+            b_val.cmp(&a_val)
+        }
+        SortColumn::Gain => {
+            let a_gain = gain_pct(a).unwrap_or(f64::NEG_INFINITY);
+            let b_gain = gain_pct(b).unwrap_or(f64::NEG_INFINITY);
+            b_gain.partial_cmp(&a_gain).unwrap_or(Ordering::Equal)
+        }
+        SortColumn::Loss => {
+            let a_gain = gain_pct(a).unwrap_or(f64::INFINITY);
+            let b_gain = gain_pct(b).unwrap_or(f64::INFINITY);
+            a_gain.partial_cmp(&b_gain).unwrap_or(Ordering::Equal)
+        }
+    }
+}
+
+pub fn run(account_filter: Option<&str>, sort: &str) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
+    let sort_by = parse_sort_column(sort)?;
 
     let (query, params): (&str, Vec<Box<dyn rusqlite::ToSql>>) = match account_filter {
         Some(filter) => (
             "SELECT h.id, h.account_id, h.symbol, h.description, h.shares, h.price, h.cost_basis, h.market_value, h.currency, h.created_at, h.updated_at
              FROM holdings h
              JOIN accounts a ON h.account_id = a.id
-             WHERE a.id = ?1 OR a.id LIKE ?1 || '%' OR a.name LIKE '%' || ?1 || '%'
-             ORDER BY h.market_value DESC NULLS LAST",
+             WHERE a.id = ?1 OR a.id LIKE ?1 || '%' OR a.nickname LIKE '%' || ?1 || '%' OR a.name LIKE '%' || ?1 || '%'",
             vec![Box::new(filter.to_string())],
         ),
         None => (
             "SELECT id, account_id, symbol, description, shares, price, cost_basis, market_value, currency, created_at, updated_at
-             FROM holdings
-             ORDER BY market_value DESC NULLS LAST",
+             FROM holdings",
             vec![],
         ),
     };
 
     let mut stmt = conn.prepare(query)?;
-    let holdings: Vec<Holding> = stmt
+    let mut holdings: Vec<Holding> = stmt
         .query_map(rusqlite::params_from_iter(params.iter()), |row| {
             Holding::from_row(row)
         })?
         .collect::<Result<Vec<_>, _>>()?;
+
+    holdings.sort_by(|a, b| compare_holdings(a, b, sort_by));
 
     if holdings.is_empty() {
         println!("No holdings found. Run 'pint sync' to fetch holdings from brokerage accounts.");
@@ -58,17 +152,9 @@ pub fn run(account_filter: Option<&str>) -> Result<()> {
             .map(|v| format!("{:>12.2}", v))
             .unwrap_or_else(|| "         N/A".to_string());
 
-        let gain_str = match (holding.cost_basis, holding.market_value) {
-            (Some(cost), Some(value)) => {
-                let gain_pct = if cost > 0 {
-                    ((value - cost) as f64 / cost as f64) * 100.0
-                } else {
-                    0.0
-                };
-                format!("{:+.1}%", gain_pct)
-            }
-            _ => "N/A".to_string(),
-        };
+        let gain_str = gain_pct(holding)
+            .map(|g| format!("{:+.1}%", g))
+            .unwrap_or_else(|| "N/A".to_string());
 
         println!(
             "{:<8} {:<20} {:>8} {} {} {:>10}",
@@ -104,6 +190,174 @@ pub fn run(account_filter: Option<&str>) -> Result<()> {
         total_value as f64 / 100.0,
         total_gain_pct,
     );
+
+    Ok(())
+}
+
+pub fn add(
+    account_query: &str,
+    symbol: &str,
+    shares: &str,
+    price: f64,
+    cost: Option<f64>,
+    description: Option<&str>,
+) -> Result<()> {
+    let conn = db::open().context("Database not found. Run 'pint init' first.")?;
+
+    // Find the account by ID, nickname, or name
+    let account: Option<(String, String)> = conn
+        .query_row(
+            "SELECT id, COALESCE(nickname, name) FROM accounts
+             WHERE id = ?1 OR id LIKE ?1 || '%' OR nickname LIKE '%' || ?1 || '%' OR name LIKE '%' || ?1 || '%'
+             LIMIT 1",
+            [account_query],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+
+    let (account_id, account_name) = match account {
+        Some(a) => a,
+        None => bail!("No account found matching '{}'", account_query),
+    };
+
+    let now = Utc::now().timestamp();
+    let price_cents = (price * 100.0).round() as i64;
+    let shares_float: f64 = shares.parse().context("Invalid shares value")?;
+    let market_value_cents = (shares_float * price * 100.0).round() as i64;
+    let cost_cents = cost.map(|c| (c * 100.0).round() as i64);
+
+    // Generate unique ID
+    let id = format!("{}:{}", account_id, symbol.to_uppercase());
+
+    conn.execute(
+        "INSERT INTO holdings (id, account_id, symbol, description, shares, price, cost_basis, market_value, currency, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'USD', ?9, ?9)
+         ON CONFLICT(id) DO UPDATE SET
+            symbol = excluded.symbol,
+            description = excluded.description,
+            shares = excluded.shares,
+            price = excluded.price,
+            cost_basis = excluded.cost_basis,
+            market_value = excluded.market_value,
+            updated_at = excluded.updated_at",
+        rusqlite::params![
+            id,
+            account_id,
+            symbol.to_uppercase(),
+            description,
+            shares,
+            price_cents,
+            cost_cents,
+            market_value_cents,
+            now,
+        ],
+    )?;
+
+    update_account_balance(&conn, &account_id)?;
+
+    println!(
+        "Added {} {} to '{}' (value: ${:.2})",
+        shares,
+        symbol.to_uppercase(),
+        account_name,
+        market_value_cents as f64 / 100.0
+    );
+
+    Ok(())
+}
+
+pub fn update(
+    holding_query: &str,
+    shares: Option<&str>,
+    price: Option<f64>,
+    cost: Option<f64>,
+) -> Result<()> {
+    let conn = db::open().context("Database not found. Run 'pint init' first.")?;
+
+    // Find holding by ID prefix or symbol
+    let holding: Option<(String, String, String, Option<String>)> = conn
+        .query_row(
+            "SELECT id, account_id, shares, symbol FROM holdings
+             WHERE id = ?1 OR id LIKE '%:' || ?1 OR id LIKE ?1 || '%'
+             LIMIT 1",
+            [holding_query.to_uppercase()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()?;
+
+    let (id, account_id, current_shares, symbol) = match holding {
+        Some(h) => h,
+        None => bail!("No holding found matching '{}'", holding_query),
+    };
+
+    let now = Utc::now().timestamp();
+    let new_shares = shares.unwrap_or(&current_shares);
+
+    conn.execute(
+        "UPDATE holdings SET updated_at = ?1 WHERE id = ?2",
+        rusqlite::params![now, id],
+    )?;
+
+    if let Some(s) = shares {
+        conn.execute(
+            "UPDATE holdings SET shares = ?1 WHERE id = ?2",
+            rusqlite::params![s, id],
+        )?;
+    }
+
+    if let Some(p) = price {
+        let price_cents = (p * 100.0).round() as i64;
+        let shares_float: f64 = new_shares.parse().unwrap_or(0.0);
+        let market_value_cents = (shares_float * p * 100.0).round() as i64;
+
+        conn.execute(
+            "UPDATE holdings SET price = ?1, market_value = ?2 WHERE id = ?3",
+            rusqlite::params![price_cents, market_value_cents, id],
+        )?;
+    }
+
+    if let Some(c) = cost {
+        let cost_cents = (c * 100.0).round() as i64;
+        conn.execute(
+            "UPDATE holdings SET cost_basis = ?1 WHERE id = ?2",
+            rusqlite::params![cost_cents, id],
+        )?;
+    }
+
+    update_account_balance(&conn, &account_id)?;
+
+    println!(
+        "Updated holding {}",
+        symbol.as_deref().unwrap_or(&id)
+    );
+
+    Ok(())
+}
+
+pub fn remove(holding_query: &str) -> Result<()> {
+    let conn = db::open().context("Database not found. Run 'pint init' first.")?;
+
+    // Find holding by ID prefix or symbol
+    let holding: Option<(String, String, Option<String>)> = conn
+        .query_row(
+            "SELECT id, account_id, symbol FROM holdings
+             WHERE id = ?1 OR id LIKE '%:' || ?1 OR id LIKE ?1 || '%'
+             LIMIT 1",
+            [holding_query.to_uppercase()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+
+    let (id, account_id, symbol) = match holding {
+        Some(h) => h,
+        None => bail!("No holding found matching '{}'", holding_query),
+    };
+
+    conn.execute("DELETE FROM holdings WHERE id = ?1", [&id])?;
+
+    update_account_balance(&conn, &account_id)?;
+
+    println!("Removed holding {}", symbol.as_deref().unwrap_or(&id));
 
     Ok(())
 }

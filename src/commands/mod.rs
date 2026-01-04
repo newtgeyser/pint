@@ -1,7 +1,9 @@
 pub mod accounts;
+pub mod assets;
 pub mod categories;
 pub mod categorize;
 pub mod holdings;
+pub mod import_holdings;
 pub mod import_rules;
 pub mod init;
 pub mod rules;

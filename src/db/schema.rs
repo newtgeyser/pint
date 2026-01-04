@@ -30,11 +30,13 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS accounts (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
+            nickname TEXT,
             institution TEXT,
             account_type TEXT NOT NULL DEFAULT 'unknown',
             balance INTEGER,
             balance_date INTEGER,
             currency TEXT DEFAULT 'USD',
+            manual INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
@@ -91,6 +93,20 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_holdings_account
             ON holdings(account_id);
+
+        CREATE TABLE IF NOT EXISTS assets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            asset_type TEXT NOT NULL,
+            description TEXT,
+            value INTEGER,
+            cost_basis INTEGER,
+            currency TEXT DEFAULT 'USD',
+            acquired_date INTEGER,
+            metadata TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
         ",
     )?;
 
@@ -126,6 +142,26 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     if !has_account_type {
         conn.execute_batch(
             "ALTER TABLE accounts ADD COLUMN account_type TEXT NOT NULL DEFAULT 'unknown';",
+        )?;
+    }
+
+    // Add manual column if it doesn't exist (for existing databases)
+    let has_manual = conn
+        .prepare("SELECT manual FROM accounts LIMIT 0")
+        .is_ok();
+    if !has_manual {
+        conn.execute_batch(
+            "ALTER TABLE accounts ADD COLUMN manual INTEGER NOT NULL DEFAULT 0;",
+        )?;
+    }
+
+    // Add nickname column if it doesn't exist (for existing databases)
+    let has_nickname = conn
+        .prepare("SELECT nickname FROM accounts LIMIT 0")
+        .is_ok();
+    if !has_nickname {
+        conn.execute_batch(
+            "ALTER TABLE accounts ADD COLUMN nickname TEXT;",
         )?;
     }
 
@@ -225,6 +261,25 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             ",
         )?;
     }
+
+    // Create assets table if it doesn't exist (for existing databases)
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS assets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            asset_type TEXT NOT NULL,
+            description TEXT,
+            value INTEGER,
+            cost_basis INTEGER,
+            currency TEXT DEFAULT 'USD',
+            acquired_date INTEGER,
+            metadata TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        ",
+    )?;
 
     Ok(())
 }

@@ -48,6 +48,12 @@ enum Commands {
         action: Option<AccountsAction>,
     },
 
+    /// Manage manual assets (real estate, vehicles, crypto, etc.)
+    Assets {
+        #[command(subcommand)]
+        action: Option<AssetsAction>,
+    },
+
     /// List transactions
     Transactions {
         /// Filter by account name or ID
@@ -79,11 +85,10 @@ enum Commands {
         limit: Option<usize>,
     },
 
-    /// List holdings (investment positions)
+    /// Manage holdings (investment positions)
     Holdings {
-        /// Filter by account name or ID
-        #[arg(short, long)]
-        account: Option<String>,
+        #[command(subcommand)]
+        action: HoldingsAction,
     },
 
     /// List categories
@@ -95,6 +100,15 @@ enum Commands {
     /// Import/reload merchant rules from config file
     ImportRules,
 
+    /// Import holdings from a CSV file
+    ImportHoldings {
+        /// Path to the CSV file
+        file: PathBuf,
+        /// Account ID or name to import into
+        #[arg(short, long)]
+        account: String,
+    },
+
     /// Categorize transactions
     Categorize {
         #[command(subcommand)]
@@ -104,12 +118,135 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum AccountsAction {
+    /// Add a manual account
+    Add {
+        /// Account name
+        name: String,
+        /// Account type (checking, savings, credit, brokerage, retirement, loan, unknown)
+        #[arg(short = 't', long = "type")]
+        account_type: String,
+    },
+    /// Remove a manual account
+    Remove {
+        /// Account ID or name (partial match)
+        account: String,
+    },
     /// Set an account's type
     SetType {
         /// Account ID or name (partial match)
         account: String,
         /// Account type (checking, savings, credit, brokerage, retirement, loan, unknown)
         account_type: String,
+    },
+    /// Set an account's nickname (or clear it if no nickname provided)
+    SetNickname {
+        /// Account ID or name (partial match)
+        account: String,
+        /// Nickname to set (omit to clear)
+        nickname: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum AssetsAction {
+    /// Add a new asset
+    Add {
+        /// Asset name (e.g., "Primary Residence", "2020 Toyota Camry")
+        name: String,
+        /// Asset type: real_estate, vehicle, crypto, collectible, other
+        #[arg(short = 't', long = "type")]
+        asset_type: String,
+        /// Current value in dollars
+        #[arg(short, long)]
+        value: f64,
+        /// Cost basis in dollars (what you paid)
+        #[arg(short, long)]
+        cost: Option<f64>,
+        /// Description
+        #[arg(short, long)]
+        description: Option<String>,
+        /// Acquisition date (YYYY-MM-DD)
+        #[arg(short, long)]
+        acquired: Option<String>,
+    },
+    /// Update an existing asset
+    Update {
+        /// Asset ID
+        id: i64,
+        /// New name
+        #[arg(short, long)]
+        name: Option<String>,
+        /// New value in dollars
+        #[arg(short, long)]
+        value: Option<f64>,
+        /// New cost basis in dollars
+        #[arg(short, long)]
+        cost: Option<f64>,
+        /// New description
+        #[arg(short, long)]
+        description: Option<String>,
+        /// New asset type
+        #[arg(short = 't', long = "type")]
+        asset_type: Option<String>,
+    },
+    /// Remove an asset
+    Remove {
+        /// Asset ID
+        id: i64,
+    },
+}
+
+#[derive(Subcommand)]
+enum HoldingsAction {
+    /// List holdings
+    List {
+        /// Filter by account name or ID
+        #[arg(short, long)]
+        account: Option<String>,
+
+        /// Sort by column: symbol, description, shares, price, value, gain, loss (default: value)
+        #[arg(short, long, default_value = "value")]
+        sort: String,
+    },
+    /// Add a holding to an account
+    Add {
+        /// Account ID or name
+        #[arg(short, long)]
+        account: String,
+        /// Symbol (e.g., BTC, AAPL)
+        #[arg(short = 'S', long)]
+        symbol: String,
+        /// Number of shares/units
+        #[arg(long)]
+        shares: String,
+        /// Price per share/unit in dollars
+        #[arg(short, long)]
+        price: f64,
+        /// Total cost basis in dollars
+        #[arg(short, long)]
+        cost: Option<f64>,
+        /// Description
+        #[arg(short, long)]
+        description: Option<String>,
+    },
+    /// Update a holding
+    Update {
+        /// Holding symbol or ID
+        holding: String,
+        /// New number of shares
+        #[arg(long)]
+        shares: Option<String>,
+        /// New price per share
+        #[arg(short, long)]
+        price: Option<f64>,
+        /// New cost basis
+        #[arg(short, long)]
+        cost: Option<f64>,
+    },
+    /// Remove a holding
+    Remove {
+        /// Holding symbol or ID
+        holding: String,
     },
 }
 
@@ -173,9 +310,48 @@ fn main() -> Result<()> {
 
         Commands::Accounts { action } => match action {
             None => commands::accounts::run(),
+            Some(AccountsAction::Add { name, account_type }) => {
+                commands::accounts::add(&name, &account_type)
+            }
+            Some(AccountsAction::Remove { account }) => {
+                commands::accounts::remove(&account)
+            }
             Some(AccountsAction::SetType { account, account_type }) => {
                 commands::accounts::set_type(&account, &account_type)
             }
+            Some(AccountsAction::SetNickname { account, nickname }) => {
+                commands::accounts::set_nickname(&account, nickname.as_deref())
+            }
+        },
+
+        Commands::Assets { action } => match action {
+            None => commands::assets::run(),
+            Some(AssetsAction::Add {
+                name,
+                asset_type,
+                value,
+                cost,
+                description,
+                acquired,
+            }) => {
+                let acquired_ts = acquired
+                    .as_ref()
+                    .map(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d"))
+                    .transpose()?
+                    .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp());
+                commands::assets::add(&name, &asset_type, value, cost, description.as_deref(), acquired_ts)
+            }
+            Some(AssetsAction::Update {
+                id,
+                name,
+                value,
+                cost,
+                description,
+                asset_type,
+            }) => {
+                commands::assets::update(id, name.as_deref(), value, cost, description.as_deref(), asset_type.as_deref())
+            }
+            Some(AssetsAction::Remove { id }) => commands::assets::remove(id),
         },
 
         Commands::Transactions {
@@ -207,8 +383,31 @@ fn main() -> Result<()> {
             })
         }
 
-        Commands::Holdings { account } => {
-            commands::holdings::run(account.as_deref())
+        Commands::Holdings { action } => match action {
+            HoldingsAction::List { account, sort } => {
+                commands::holdings::run(account.as_deref(), &sort)
+            }
+            HoldingsAction::Add {
+                account,
+                symbol,
+                shares,
+                price,
+                cost,
+                description,
+            } => {
+                commands::holdings::add(&account, &symbol, &shares, price, cost, description.as_deref())
+            }
+            HoldingsAction::Update {
+                holding,
+                shares,
+                price,
+                cost,
+            } => {
+                commands::holdings::update(&holding, shares.as_deref(), price, cost)
+            }
+            HoldingsAction::Remove { holding } => {
+                commands::holdings::remove(&holding)
+            }
         }
 
         Commands::Categories => commands::categories::run(),
@@ -216,6 +415,10 @@ fn main() -> Result<()> {
         Commands::Rules => commands::rules::run(),
 
         Commands::ImportRules => commands::import_rules::run(),
+
+        Commands::ImportHoldings { file, account } => {
+            commands::import_holdings::run(&file, &account)
+        }
 
         Commands::Categorize { action } => match action {
             CategorizeAction::Auto => commands::categorize::run_auto(),
