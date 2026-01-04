@@ -81,7 +81,7 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
             symbol TEXT,
             description TEXT,
             shares TEXT NOT NULL,
-            cost_basis INTEGER,
+            price INTEGER,
             market_value INTEGER,
             currency TEXT DEFAULT 'USD',
             created_at INTEGER NOT NULL,
@@ -142,7 +142,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             symbol TEXT,
             description TEXT,
             shares TEXT NOT NULL,
-            cost_basis INTEGER,
+            price INTEGER,
             market_value INTEGER,
             currency TEXT DEFAULT 'USD',
             created_at INTEGER NOT NULL,
@@ -153,6 +153,45 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             ON holdings(account_id);
         ",
     )?;
+
+    // Migrate holdings table: rename cost_basis to price
+    let has_cost_basis = conn
+        .prepare("SELECT cost_basis FROM holdings LIMIT 0")
+        .is_ok();
+    if has_cost_basis {
+        conn.execute_batch(
+            "
+            PRAGMA foreign_keys = OFF;
+            BEGIN;
+
+            ALTER TABLE holdings RENAME TO holdings_old;
+
+            CREATE TABLE holdings (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL REFERENCES accounts(id),
+                symbol TEXT,
+                description TEXT,
+                shares TEXT NOT NULL,
+                price INTEGER,
+                market_value INTEGER,
+                currency TEXT DEFAULT 'USD',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            INSERT INTO holdings (id, account_id, symbol, description, shares, price, market_value, currency, created_at, updated_at)
+            SELECT id, account_id, symbol, description, shares, NULL, market_value, currency, created_at, updated_at
+            FROM holdings_old;
+
+            DROP TABLE holdings_old;
+
+            CREATE INDEX idx_holdings_account ON holdings(account_id);
+
+            COMMIT;
+            PRAGMA foreign_keys = ON;
+            ",
+        )?;
+    }
 
     // Remove the overly-aggressive UNIQUE(account_id, posted, amount, description) constraint
     // (SQLite requires a table rebuild to remove a table-level UNIQUE constraint).
