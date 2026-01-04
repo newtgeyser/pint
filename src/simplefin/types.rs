@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 pub struct AccountSet {
@@ -19,6 +20,8 @@ pub struct Account {
     pub org: Option<Organization>,
     #[serde(default)]
     pub transactions: Vec<Transaction>,
+    #[serde(default)]
+    pub extra: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,6 +49,33 @@ impl Account {
 
     pub fn balance_cents(&self) -> Option<i64> {
         parse_amount_to_cents(&self.balance)
+    }
+
+    pub fn account_type(&self) -> &str {
+        // Try to extract account type from extra field
+        // Common keys: "type", "account_type", "accountType"
+        if let Some(extra) = &self.extra {
+            for key in ["type", "account_type", "accountType", "account-type"] {
+                if let Some(Value::String(t)) = extra.get(key) {
+                    return normalize_account_type(t);
+                }
+            }
+        }
+        "unknown"
+    }
+}
+
+fn normalize_account_type(t: &str) -> &'static str {
+    let lower = t.to_lowercase();
+    match lower.as_str() {
+        "checking" | "dda" => "checking",
+        "savings" | "sda" => "savings",
+        "credit" | "credit card" | "creditcard" | "cc" => "credit",
+        "brokerage" | "investment" | "investments" => "brokerage",
+        "retirement" | "ira" | "401k" | "roth" => "retirement",
+        "loan" | "mortgage" => "loan",
+        "money market" | "mma" => "money market",
+        _ => "unknown",
     }
 }
 

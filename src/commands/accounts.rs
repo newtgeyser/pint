@@ -1,15 +1,27 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use chrono::{TimeZone, Utc};
+use rusqlite::OptionalExtension;
 
 use crate::db::{self, models::Account};
+
+const VALID_TYPES: &[&str] = &[
+    "checking",
+    "savings",
+    "credit",
+    "brokerage",
+    "retirement",
+    "loan",
+    "money market",
+    "unknown",
+];
 
 pub fn run() -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
 
     let mut stmt = conn.prepare(
-        "SELECT id, name, institution, balance, balance_date, currency, created_at, updated_at
+        "SELECT id, name, institution, account_type, balance, balance_date, currency, created_at, updated_at
          FROM accounts
-         ORDER BY name",
+         ORDER BY account_type, name",
     )?;
 
     let accounts: Vec<Account> = stmt
@@ -21,8 +33,8 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
 
-    println!("{:<40} {:>12} {:>6}  {}", "ACCOUNT", "BALANCE", "CUR", "AS OF");
-    println!("{}", "-".repeat(72));
+    println!("{:<12} {:<40} {:>12} {:>6}  {}", "TYPE", "ACCOUNT", "BALANCE", "CUR", "AS OF");
+    println!("{}", "-".repeat(86));
 
     for account in accounts {
         let balance_str = account
@@ -47,7 +59,8 @@ pub fn run() -> Result<()> {
         };
 
         println!(
-            "{:<40} {} {:>6}  {}",
+            "{:<12} {:<40} {} {:>6}  {}",
+            account.account_type,
             truncate(&display_name, 40),
             balance_str,
             account.currency,
@@ -63,5 +76,41 @@ fn truncate(s: &str, max: usize) -> String {
         s.to_string()
     } else {
         format!("{}...", &s[..max - 3])
+    }
+}
+
+pub fn set_type(account_query: &str, account_type: &str) -> Result<()> {
+    let account_type = account_type.to_lowercase();
+    if !VALID_TYPES.contains(&account_type.as_str()) {
+        bail!(
+            "Invalid account type '{}'. Valid types: {}",
+            account_type,
+            VALID_TYPES.join(", ")
+        );
+    }
+
+    let conn = db::open().context("Database not found. Run 'pint init' first.")?;
+
+    // Find account by ID or name (partial match)
+    let account: Option<(String, String)> = conn
+        .query_row(
+            "SELECT id, name FROM accounts
+             WHERE id = ?1 OR name LIKE '%' || ?1 || '%'
+             LIMIT 1",
+            [account_query],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+
+    match account {
+        Some((id, name)) => {
+            conn.execute(
+                "UPDATE accounts SET account_type = ?1, updated_at = ?2 WHERE id = ?3",
+                rusqlite::params![account_type, chrono::Utc::now().timestamp(), id],
+            )?;
+            println!("Set account '{}' type to '{}'", name, account_type);
+            Ok(())
+        }
+        None => bail!("No account found matching '{}'", account_query),
     }
 }

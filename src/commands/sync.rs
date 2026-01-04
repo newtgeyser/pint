@@ -113,11 +113,15 @@ fn import_accounts(conn: &Connection, account_set: &AccountSet) -> Result<SyncSt
         let institution = account.institution_name();
 
         conn.execute(
-            "INSERT INTO accounts (id, name, institution, balance, balance_date, currency, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+            "INSERT INTO accounts (id, name, institution, account_type, balance, balance_date, currency, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 institution = excluded.institution,
+                account_type = CASE
+                    WHEN accounts.account_type = 'unknown' THEN excluded.account_type
+                    ELSE accounts.account_type
+                END,
                 balance = excluded.balance,
                 balance_date = excluded.balance_date,
                 currency = excluded.currency,
@@ -126,6 +130,7 @@ fn import_accounts(conn: &Connection, account_set: &AccountSet) -> Result<SyncSt
                 account.id,
                 account.name,
                 institution,
+                account.account_type(),
                 account.balance_cents(),
                 account.balance_date,
                 account.currency.as_deref().unwrap_or("USD"),

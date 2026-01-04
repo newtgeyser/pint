@@ -53,6 +53,9 @@ pub fn open_at(path: &Path) -> Result<Connection> {
 
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
 
+    // Run migrations to ensure schema is up to date
+    schema::migrate(&conn)?;
+
     Ok(conn)
 }
 

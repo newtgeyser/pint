@@ -8,6 +8,7 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             institution TEXT,
+            account_type TEXT NOT NULL DEFAULT 'unknown',
             balance INTEGER,
             balance_date INTEGER,
             currency TEXT DEFAULT 'USD',
@@ -76,6 +77,16 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     if !has_match_mode {
         conn.execute_batch(
             "ALTER TABLE merchant_rules ADD COLUMN match_mode TEXT NOT NULL DEFAULT 'substring';",
+        )?;
+    }
+
+    // Add account_type column if it doesn't exist (for existing databases)
+    let has_account_type = conn
+        .prepare("SELECT account_type FROM accounts LIMIT 0")
+        .is_ok();
+    if !has_account_type {
+        conn.execute_batch(
+            "ALTER TABLE accounts ADD COLUMN account_type TEXT NOT NULL DEFAULT 'unknown';",
         )?;
     }
 

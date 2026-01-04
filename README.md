@@ -176,6 +176,19 @@ Edit `~/.local/share/pint/rules.toml` to customize, then run `pint import-rules`
 - [ ] Scheduled/recurring transaction detection
 - [ ] Budget tracking
 
+## Security Considerations
+
+While Pint is fully local and its code is auditable, it relies on SimpleFIN to access financial
+institutions information. For a typical US consumer “transaction aggregation” use case, SimpleFIN
+Bridge is secure enough if you already accept the risk profile of Plaid/MX-style aggregation. The
+reasons are straightforward:
+
+- The protocol and the Bridge’s app-sharing mechanism are designed around read-only access (you’re granting a “window,” not “control”). 
+- They implemented revocable access tokens (apps can be cut off), and they say they alert on new IP access. 
+- They claim no credential storage on their side (delegated to MX) and publish a pentest summary indicating no unresolved critical/high/medium issues at the time of that test. 
+
+It is not secure enough if your requirement is “no third party should ever be able to access or store my financial data” (including transaction history) or if you treat transaction-level data as highly sensitive in the same way you treat authentication secrets because, by design, you are introducing third parties and a tokenized access surface.
+
 ## SimpleFIN Notes
 
 - Rate limit: 24 requests per day

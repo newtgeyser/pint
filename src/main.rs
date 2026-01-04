@@ -42,8 +42,11 @@ enum Commands {
         from: Option<String>,
     },
 
-    /// List accounts
-    Accounts,
+    /// Manage accounts
+    Accounts {
+        #[command(subcommand)]
+        action: Option<AccountsAction>,
+    },
 
     /// List transactions
     Transactions {
@@ -89,6 +92,17 @@ enum Commands {
     Categorize {
         #[command(subcommand)]
         action: CategorizeAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum AccountsAction {
+    /// Set an account's type
+    SetType {
+        /// Account ID or name (partial match)
+        account: String,
+        /// Account type (checking, savings, credit, brokerage, retirement, loan, unknown)
+        account_type: String,
     },
 }
 
@@ -145,7 +159,12 @@ fn main() -> Result<()> {
             commands::sync::run_backfill(from)
         }
 
-        Commands::Accounts => commands::accounts::run(),
+        Commands::Accounts { action } => match action {
+            None => commands::accounts::run(),
+            Some(AccountsAction::SetType { account, account_type }) => {
+                commands::accounts::set_type(&account, &account_type)
+            }
+        },
 
         Commands::Transactions {
             account,
