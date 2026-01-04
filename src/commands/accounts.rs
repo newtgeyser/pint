@@ -33,7 +33,7 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
 
-    println!("{:<12} {:<40} {:>12} {:>6}  {}", "TYPE", "ACCOUNT", "BALANCE", "CUR", "AS OF");
+    println!("{:<12} {:<12} {:<28} {:>12} {:>4}  {}", "ID", "TYPE", "ACCOUNT", "BALANCE", "CUR", "AS OF");
     println!("{}", "-".repeat(86));
 
     for account in accounts {
@@ -58,10 +58,13 @@ pub fn run() -> Result<()> {
             account.name.clone()
         };
 
+        let short_id = truncate(&account.id, 12);
+
         println!(
-            "{:<12} {:<40} {} {:>6}  {}",
+            "{:<12} {:<12} {:<28} {} {:>4}  {}",
+            short_id,
             account.account_type,
-            truncate(&display_name, 40),
+            truncate(&display_name, 28),
             balance_str,
             account.currency,
             date_str,
@@ -91,11 +94,11 @@ pub fn set_type(account_query: &str, account_type: &str) -> Result<()> {
 
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
 
-    // Find account by ID or name (partial match)
+    // Find account by ID (exact or prefix) or name (partial match)
     let account: Option<(String, String)> = conn
         .query_row(
             "SELECT id, name FROM accounts
-             WHERE id = ?1 OR name LIKE '%' || ?1 || '%'
+             WHERE id = ?1 OR id LIKE ?1 || '%' OR name LIKE '%' || ?1 || '%'
              LIMIT 1",
             [account_query],
             |row| Ok((row.get(0)?, row.get(1)?)),
