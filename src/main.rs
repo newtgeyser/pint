@@ -154,7 +154,12 @@ fn main() -> Result<()> {
         Commands::Setup => commands::setup::run(),
 
         Commands::Sync { days } => {
-            let days = days.min(60);
+            let days = if days > 60 {
+                eprintln!("Warning: days capped at 60 (SimpleFIN limit)");
+                60
+            } else {
+                days
+            };
             commands::sync::run(days)
         }
 

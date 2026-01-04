@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use chrono::{NaiveDate, TimeZone, Utc};
 
 use crate::db;
+use crate::util::truncate;
 
 pub struct Filters {
     pub account: Option<String>,
@@ -37,11 +38,9 @@ pub fn run(filters: Filters) -> Result<()> {
     if let Some(ref account) = filters.account {
         let param_num = params.len() + 1;
         sql.push_str(&format!(
-            " AND (a.name LIKE ?{} OR a.id = ?{})",
-            param_num,
-            param_num + 1
+            " AND (a.id = ?{p} OR a.id LIKE ?{p} || '%' OR a.name LIKE '%' || ?{p} || '%')",
+            p = param_num
         ));
-        params.push(Box::new(format!("%{}%", account)));
         params.push(Box::new(account.clone()));
     }
 
@@ -131,20 +130,3 @@ pub fn run(filters: Filters) -> Result<()> {
     Ok(())
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    if max == 0 {
-        return String::new();
-    }
-
-    let count = s.chars().count();
-    if count <= max {
-        return s.to_string();
-    }
-    if max <= 3 {
-        return ".".repeat(max);
-    }
-
-    let mut out: String = s.chars().take(max - 3).collect();
-    out.push_str("...");
-    out
-}

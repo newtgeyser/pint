@@ -14,6 +14,10 @@ export PINT_DATA_DIR=./dev-data
 
 Never run destructive commands (like `rm` on database files) against the production path `~/.local/share/pint/`.
 
+## Git Commits
+
+Do not add "Generated with Claude Code" footers or "Co-Authored-By" lines to commit messages.
+
 ## Build & Test
 
 ```bash

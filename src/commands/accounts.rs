@@ -3,6 +3,7 @@ use chrono::{TimeZone, Utc};
 use rusqlite::OptionalExtension;
 
 use crate::db::{self, models::Account};
+use crate::util::truncate;
 
 const VALID_TYPES: &[&str] = &[
     "checking",
@@ -74,23 +75,6 @@ pub fn run() -> Result<()> {
     Ok(())
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    if max == 0 {
-        return String::new();
-    }
-
-    let count = s.chars().count();
-    if count <= max {
-        return s.to_string();
-    }
-    if max <= 3 {
-        return ".".repeat(max);
-    }
-
-    let mut out: String = s.chars().take(max - 3).collect();
-    out.push_str("...");
-    out
-}
 
 pub fn set_type(account_query: &str, account_type: &str) -> Result<()> {
     let account_type = account_type.to_lowercase();

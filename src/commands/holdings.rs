@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 
 use crate::db::{self, models::Holding};
+use crate::util::truncate;
 
 pub fn run(account_filter: Option<&str>) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
@@ -107,20 +108,3 @@ pub fn run(account_filter: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    if max == 0 {
-        return String::new();
-    }
-
-    let count = s.chars().count();
-    if count <= max {
-        return s.to_string();
-    }
-    if max <= 3 {
-        return ".".repeat(max);
-    }
-
-    let mut out: String = s.chars().take(max - 3).collect();
-    out.push_str("...");
-    out
-}
