@@ -219,14 +219,15 @@ fn import_holding(
     now_ts: i64,
 ) -> Result<()> {
     conn.execute(
-        "INSERT INTO holdings (id, account_id, symbol, description, shares, price, market_value, currency, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)
+        "INSERT INTO holdings (id, account_id, symbol, description, shares, price, cost_basis, market_value, currency, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)
          ON CONFLICT(id) DO UPDATE SET
             account_id = excluded.account_id,
             symbol = excluded.symbol,
             description = excluded.description,
             shares = excluded.shares,
             price = excluded.price,
+            cost_basis = excluded.cost_basis,
             market_value = excluded.market_value,
             currency = excluded.currency,
             updated_at = excluded.updated_at",
@@ -237,6 +238,7 @@ fn import_holding(
             holding.description,
             holding.shares.as_deref().unwrap_or("0"),
             holding.price_cents(),
+            holding.cost_basis_cents(),
             holding.market_value_cents(),
             holding.currency.as_deref().unwrap_or("USD"),
             now_ts,

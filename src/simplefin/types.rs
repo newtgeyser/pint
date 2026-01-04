@@ -122,6 +122,10 @@ impl Holding {
         self.market_value.as_ref().and_then(|s| parse_amount_to_cents(s))
     }
 
+    pub fn cost_basis_cents(&self) -> Option<i64> {
+        self.cost_basis.as_ref().and_then(|s| parse_amount_to_cents(s))
+    }
+
     pub fn price_cents(&self) -> Option<i64> {
         let market_value = self.market_value_cents()?;
         let shares: f64 = self.shares.as_ref()?.parse().ok()?;

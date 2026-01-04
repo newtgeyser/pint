@@ -7,7 +7,7 @@ pub fn run(account_filter: Option<&str>) -> Result<()> {
 
     let (query, params): (&str, Vec<Box<dyn rusqlite::ToSql>>) = match account_filter {
         Some(filter) => (
-            "SELECT h.id, h.account_id, h.symbol, h.description, h.shares, h.price, h.market_value, h.currency, h.created_at, h.updated_at
+            "SELECT h.id, h.account_id, h.symbol, h.description, h.shares, h.price, h.cost_basis, h.market_value, h.currency, h.created_at, h.updated_at
              FROM holdings h
              JOIN accounts a ON h.account_id = a.id
              WHERE a.id = ?1 OR a.id LIKE ?1 || '%' OR a.name LIKE '%' || ?1 || '%'
@@ -15,7 +15,7 @@ pub fn run(account_filter: Option<&str>) -> Result<()> {
             vec![Box::new(filter.to_string())],
         ),
         None => (
-            "SELECT id, account_id, symbol, description, shares, price, market_value, currency, created_at, updated_at
+            "SELECT id, account_id, symbol, description, shares, price, cost_basis, market_value, currency, created_at, updated_at
              FROM holdings
              ORDER BY market_value DESC NULLS LAST",
             vec![],
@@ -35,49 +35,73 @@ pub fn run(account_filter: Option<&str>) -> Result<()> {
     }
 
     println!(
-        "{:<8} {:<24} {:>10} {:>10} {:>14}",
-        "SYMBOL", "DESCRIPTION", "SHARES", "PRICE", "VALUE"
+        "{:<8} {:<20} {:>8} {:>9} {:>12} {:>10}",
+        "SYMBOL", "DESCRIPTION", "SHARES", "PRICE", "VALUE", "GAIN/LOSS"
     );
-    println!("{}", "-".repeat(70));
+    println!("{}", "-".repeat(72));
 
+    let mut total_cost = 0i64;
     let mut total_value = 0i64;
 
     for holding in &holdings {
         let symbol = holding.symbol.as_deref().unwrap_or("-");
-        let desc = truncate(holding.description.as_deref().unwrap_or("-"), 24);
+        let desc = truncate(holding.description.as_deref().unwrap_or("-"), 20);
 
         let price_str = holding
             .price_dollars()
-            .map(|p| format!("{:>10.2}", p))
-            .unwrap_or_else(|| "       N/A".to_string());
+            .map(|p| format!("{:>9.2}", p))
+            .unwrap_or_else(|| "      N/A".to_string());
 
         let value_str = holding
             .market_value_dollars()
-            .map(|v| format!("{:>14.2}", v))
-            .unwrap_or_else(|| "           N/A".to_string());
+            .map(|v| format!("{:>12.2}", v))
+            .unwrap_or_else(|| "         N/A".to_string());
+
+        let gain_str = match (holding.cost_basis, holding.market_value) {
+            (Some(cost), Some(value)) => {
+                let gain_pct = if cost > 0 {
+                    ((value - cost) as f64 / cost as f64) * 100.0
+                } else {
+                    0.0
+                };
+                format!("{:+.1}%", gain_pct)
+            }
+            _ => "N/A".to_string(),
+        };
 
         println!(
-            "{:<8} {:<24} {:>10} {} {}",
+            "{:<8} {:<20} {:>8} {} {} {:>10}",
             truncate(symbol, 8),
             desc,
-            truncate(&holding.shares, 10),
+            truncate(&holding.shares, 8),
             price_str,
             value_str,
+            gain_str,
         );
 
+        if let Some(c) = holding.cost_basis {
+            total_cost += c;
+        }
         if let Some(v) = holding.market_value {
             total_value += v;
         }
     }
 
-    println!("{}", "-".repeat(70));
+    let total_gain_pct = if total_cost > 0 {
+        ((total_value - total_cost) as f64 / total_cost as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    println!("{}", "-".repeat(72));
     println!(
-        "{:<8} {:<24} {:>10} {:>10} {:>14.2}",
+        "{:<8} {:<20} {:>8} {:>9} {:>12.2} {:>+10.1}%",
         "",
         "TOTAL",
         "",
         "",
         total_value as f64 / 100.0,
+        total_gain_pct,
     );
 
     Ok(())

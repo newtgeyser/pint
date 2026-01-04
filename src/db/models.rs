@@ -110,6 +110,7 @@ pub struct Holding {
     pub description: Option<String>,
     pub shares: String,
     pub price: Option<i64>,
+    pub cost_basis: Option<i64>,
     pub market_value: Option<i64>,
     pub currency: String,
     pub created_at: i64,
@@ -125,6 +126,7 @@ impl Holding {
             description: row.get("description")?,
             shares: row.get("shares")?,
             price: row.get("price")?,
+            cost_basis: row.get("cost_basis")?,
             market_value: row.get("market_value")?,
             currency: row.get("currency")?,
             created_at: row.get("created_at")?,
@@ -134,6 +136,10 @@ impl Holding {
 
     pub fn price_dollars(&self) -> Option<f64> {
         self.price.map(|cents| cents as f64 / 100.0)
+    }
+
+    pub fn cost_basis_dollars(&self) -> Option<f64> {
+        self.cost_basis.map(|cents| cents as f64 / 100.0)
     }
 
     pub fn market_value_dollars(&self) -> Option<f64> {
