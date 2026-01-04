@@ -1,0 +1,1592 @@
+# Pint - Default Merchant Rules
+#
+# Each rule maps a pattern to a category.
+# Matching is case-insensitive.
+#
+# Match modes:
+# - substring (default): pattern appears anywhere in the description
+# - token: pattern must be bounded by non-alphanumeric characters (avoids matching inside words, e.g. "IRS" in "FIRST")
+# Edit this file to customize your categorization rules.
+# Run `pint import-rules` after editing to reload.
+
+# ============================================================================
+# GROCERIES
+# ============================================================================
+[[rules]]
+pattern = "WHOLE FOODS"
+category = "Groceries"
+
+[[rules]]
+pattern = "WHOLEFDS"
+category = "Groceries"
+
+[[rules]]
+pattern = "TRADER JOE"
+category = "Groceries"
+
+[[rules]]
+pattern = "SAFEWAY"
+category = "Groceries"
+
+[[rules]]
+pattern = "KROGER"
+category = "Groceries"
+
+[[rules]]
+pattern = "PUBLIX"
+category = "Groceries"
+
+[[rules]]
+pattern = "WEGMANS"
+category = "Groceries"
+
+[[rules]]
+pattern = "ALDI"
+category = "Groceries"
+
+[[rules]]
+pattern = "COSTCO"
+category = "Groceries"
+
+[[rules]]
+pattern = "SAM'S CLUB"
+category = "Groceries"
+
+[[rules]]
+pattern = "SAMSCLUB"
+category = "Groceries"
+
+[[rules]]
+pattern = "WALMART GROCERY"
+category = "Groceries"
+
+[[rules]]
+pattern = "TARGET GROCERY"
+category = "Groceries"
+
+[[rules]]
+pattern = "SPROUTS"
+category = "Groceries"
+
+[[rules]]
+pattern = "HARRIS TEETER"
+category = "Groceries"
+
+[[rules]]
+pattern = "STOP & SHOP"
+category = "Groceries"
+
+[[rules]]
+pattern = "GIANT FOOD"
+category = "Groceries"
+
+[[rules]]
+pattern = "FOOD LION"
+category = "Groceries"
+
+[[rules]]
+pattern = "INSTACART"
+category = "Groceries"
+
+[[rules]]
+pattern = "FRESH DIRECT"
+category = "Groceries"
+
+[[rules]]
+pattern = "ALBERTSONS"
+category = "Groceries"
+
+[[rules]]
+pattern = "VONS"
+category = "Groceries"
+
+[[rules]]
+pattern = "RALPHS"
+category = "Groceries"
+
+[[rules]]
+pattern = "H-E-B"
+category = "Groceries"
+
+[[rules]]
+pattern = "HEB"
+match = "token"
+category = "Groceries"
+
+[[rules]]
+pattern = "MEIJER"
+category = "Groceries"
+
+[[rules]]
+pattern = "WINCO"
+category = "Groceries"
+
+# ============================================================================
+# RESTAURANTS & FOOD DELIVERY
+# ============================================================================
+[[rules]]
+pattern = "DOORDASH"
+category = "Restaurants"
+
+[[rules]]
+pattern = "UBER EATS"
+category = "Restaurants"
+
+[[rules]]
+pattern = "UBEREATS"
+category = "Restaurants"
+
+[[rules]]
+pattern = "GRUBHUB"
+category = "Restaurants"
+
+[[rules]]
+pattern = "POSTMATES"
+category = "Restaurants"
+
+[[rules]]
+pattern = "SEAMLESS"
+category = "Restaurants"
+
+[[rules]]
+pattern = "CAVIAR"
+category = "Restaurants"
+
+[[rules]]
+pattern = "CHIPOTLE"
+category = "Restaurants"
+
+[[rules]]
+pattern = "MCDONALD"
+category = "Restaurants"
+
+[[rules]]
+pattern = "BURGER KING"
+category = "Restaurants"
+
+[[rules]]
+pattern = "WENDY'S"
+category = "Restaurants"
+
+[[rules]]
+pattern = "TACO BELL"
+category = "Restaurants"
+
+[[rules]]
+pattern = "SUBWAY"
+category = "Restaurants"
+
+[[rules]]
+pattern = "PANERA"
+category = "Restaurants"
+
+[[rules]]
+pattern = "CHICK-FIL-A"
+category = "Restaurants"
+
+[[rules]]
+pattern = "CHICKFILA"
+category = "Restaurants"
+
+[[rules]]
+pattern = "DOMINO"
+category = "Restaurants"
+
+[[rules]]
+pattern = "PIZZA HUT"
+category = "Restaurants"
+
+[[rules]]
+pattern = "PAPA JOHN"
+category = "Restaurants"
+
+[[rules]]
+pattern = "FIVE GUYS"
+category = "Restaurants"
+
+[[rules]]
+pattern = "IN-N-OUT"
+category = "Restaurants"
+
+[[rules]]
+pattern = "SHAKE SHACK"
+category = "Restaurants"
+
+[[rules]]
+pattern = "SWEETGREEN"
+category = "Restaurants"
+
+[[rules]]
+pattern = "CAVA"
+category = "Restaurants"
+
+[[rules]]
+pattern = "OLIVE GARDEN"
+category = "Restaurants"
+
+[[rules]]
+pattern = "APPLEBEE"
+category = "Restaurants"
+
+[[rules]]
+pattern = "CHILI'S"
+category = "Restaurants"
+
+[[rules]]
+pattern = "OUTBACK"
+category = "Restaurants"
+
+[[rules]]
+pattern = "RED LOBSTER"
+category = "Restaurants"
+
+[[rules]]
+pattern = "CHEESECAKE FACTORY"
+category = "Restaurants"
+
+[[rules]]
+pattern = "PF CHANG"
+category = "Restaurants"
+
+[[rules]]
+pattern = "PANDA EXPRESS"
+category = "Restaurants"
+
+# ============================================================================
+# COFFEE & CAFES
+# ============================================================================
+[[rules]]
+pattern = "STARBUCKS"
+category = "Coffee & Cafes"
+
+[[rules]]
+pattern = "DUNKIN"
+category = "Coffee & Cafes"
+
+[[rules]]
+pattern = "PEET'S COFFEE"
+category = "Coffee & Cafes"
+
+[[rules]]
+pattern = "BLUE BOTTLE"
+category = "Coffee & Cafes"
+
+[[rules]]
+pattern = "PHILZ"
+category = "Coffee & Cafes"
+
+[[rules]]
+pattern = "INTELLIGENTSIA"
+category = "Coffee & Cafes"
+
+[[rules]]
+pattern = "LA COLOMBE"
+category = "Coffee & Cafes"
+
+# ============================================================================
+# SHOPPING - GENERAL
+# ============================================================================
+[[rules]]
+pattern = "AMAZON"
+category = "Shopping"
+
+[[rules]]
+pattern = "AMZN"
+category = "Shopping"
+
+[[rules]]
+pattern = "WALMART"
+category = "Shopping"
+
+[[rules]]
+pattern = "TARGET"
+category = "Shopping"
+
+[[rules]]
+pattern = "BEST BUY"
+category = "Shopping"
+
+[[rules]]
+pattern = "BESTBUY"
+category = "Shopping"
+
+[[rules]]
+pattern = "APPLE.COM"
+category = "Shopping"
+
+[[rules]]
+pattern = "APPLE STORE"
+category = "Shopping"
+
+[[rules]]
+pattern = "EBAY"
+category = "Shopping"
+
+[[rules]]
+pattern = "ETSY"
+category = "Shopping"
+
+[[rules]]
+pattern = "IKEA"
+category = "Shopping"
+
+[[rules]]
+pattern = "HOME DEPOT"
+category = "Shopping"
+
+[[rules]]
+pattern = "HOMEDEPOT"
+category = "Shopping"
+
+[[rules]]
+pattern = "LOWE'S"
+category = "Shopping"
+
+[[rules]]
+pattern = "LOWES"
+category = "Shopping"
+
+[[rules]]
+pattern = "BED BATH"
+category = "Shopping"
+
+[[rules]]
+pattern = "WAYFAIR"
+category = "Shopping"
+
+[[rules]]
+pattern = "OVERSTOCK"
+category = "Shopping"
+
+[[rules]]
+pattern = "NORDSTROM"
+category = "Shopping"
+
+[[rules]]
+pattern = "MACY'S"
+category = "Shopping"
+
+[[rules]]
+pattern = "MACYS"
+category = "Shopping"
+
+[[rules]]
+pattern = "KOHL'S"
+category = "Shopping"
+
+[[rules]]
+pattern = "KOHLS"
+category = "Shopping"
+
+[[rules]]
+pattern = "JC PENNEY"
+category = "Shopping"
+
+[[rules]]
+pattern = "JCPENNEY"
+category = "Shopping"
+
+[[rules]]
+pattern = "TJ MAXX"
+category = "Shopping"
+
+[[rules]]
+pattern = "TJMAXX"
+category = "Shopping"
+
+[[rules]]
+pattern = "MARSHALLS"
+category = "Shopping"
+
+[[rules]]
+pattern = "ROSS STORES"
+category = "Shopping"
+
+[[rules]]
+pattern = "OLD NAVY"
+category = "Shopping"
+
+[[rules]]
+pattern = "GAP"
+category = "Shopping"
+
+[[rules]]
+pattern = "ZARA"
+category = "Shopping"
+
+[[rules]]
+pattern = "H&M"
+category = "Shopping"
+
+[[rules]]
+pattern = "UNIQLO"
+category = "Shopping"
+
+[[rules]]
+pattern = "NIKE"
+category = "Shopping"
+
+[[rules]]
+pattern = "ADIDAS"
+category = "Shopping"
+
+[[rules]]
+pattern = "REI"
+match = "token"
+category = "Shopping"
+
+[[rules]]
+pattern = "DICK'S SPORTING"
+category = "Shopping"
+
+[[rules]]
+pattern = "ACADEMY SPORTS"
+category = "Shopping"
+
+# ============================================================================
+# GAS & AUTO
+# ============================================================================
+[[rules]]
+pattern = "SHELL OIL"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "SHELL SERVICE"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "CHEVRON"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "EXXON"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "MOBIL"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "BP"
+match = "token"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "ARCO"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "76 GAS"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "CITGO"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "SUNOCO"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "SPEEDWAY"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "CIRCLE K"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "WAWA"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "SHEETZ"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "QUIKTRIP"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "RACETRAC"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "AUTOZONE"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "O'REILLY AUTO"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "ADVANCE AUTO"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "JIFFY LUBE"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "VALVOLINE"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "FIRESTONE"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "DISCOUNT TIRE"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "PENSKE"
+category = "Gas & Auto"
+
+[[rules]]
+pattern = "U-HAUL"
+category = "Gas & Auto"
+
+# ============================================================================
+# TRANSPORTATION & RIDESHARE
+# ============================================================================
+[[rules]]
+pattern = "UBER"
+match = "token"
+category = "Transportation"
+
+[[rules]]
+pattern = "UBER*"
+category = "Transportation"
+
+[[rules]]
+pattern = "LYFT"
+category = "Transportation"
+
+[[rules]]
+pattern = "LIME SCOOTER"
+category = "Transportation"
+
+[[rules]]
+pattern = "BIRD RIDE"
+category = "Transportation"
+
+[[rules]]
+pattern = "CITI BIKE"
+category = "Transportation"
+
+[[rules]]
+pattern = "ZIPCAR"
+category = "Transportation"
+
+[[rules]]
+pattern = "TURO"
+category = "Transportation"
+
+[[rules]]
+pattern = "PARKING"
+category = "Transportation"
+
+[[rules]]
+pattern = "MTA"
+match = "token"
+category = "Transportation"
+
+[[rules]]
+pattern = "METRO"
+match = "token"
+category = "Transportation"
+
+[[rules]]
+pattern = "WMATA"
+category = "Transportation"
+
+[[rules]]
+pattern = "BART"
+match = "token"
+category = "Transportation"
+
+[[rules]]
+pattern = "CALTRAIN"
+category = "Transportation"
+
+[[rules]]
+pattern = "AMTRAK"
+category = "Transportation"
+
+[[rules]]
+pattern = "TOLL"
+category = "Transportation"
+
+[[rules]]
+pattern = "E-ZPASS"
+category = "Transportation"
+
+[[rules]]
+pattern = "FASTRAK"
+category = "Transportation"
+
+# ============================================================================
+# TRAVEL & LODGING
+# ============================================================================
+[[rules]]
+pattern = "AIRBNB"
+category = "Travel"
+
+[[rules]]
+pattern = "VRBO"
+category = "Travel"
+
+[[rules]]
+pattern = "MARRIOTT"
+category = "Travel"
+
+[[rules]]
+pattern = "HILTON"
+category = "Travel"
+
+[[rules]]
+pattern = "HYATT"
+category = "Travel"
+
+[[rules]]
+pattern = "IHG"
+category = "Travel"
+
+[[rules]]
+pattern = "HOLIDAY INN"
+category = "Travel"
+
+[[rules]]
+pattern = "BEST WESTERN"
+category = "Travel"
+
+[[rules]]
+pattern = "WYNDHAM"
+category = "Travel"
+
+[[rules]]
+pattern = "MOTEL 6"
+category = "Travel"
+
+[[rules]]
+pattern = "EXPEDIA"
+category = "Travel"
+
+[[rules]]
+pattern = "BOOKING.COM"
+category = "Travel"
+
+[[rules]]
+pattern = "HOTELS.COM"
+category = "Travel"
+
+[[rules]]
+pattern = "KAYAK"
+category = "Travel"
+
+[[rules]]
+pattern = "PRICELINE"
+category = "Travel"
+
+[[rules]]
+pattern = "SOUTHWEST"
+category = "Travel"
+
+[[rules]]
+pattern = "UNITED AIR"
+category = "Travel"
+
+[[rules]]
+pattern = "AMERICAN AIR"
+category = "Travel"
+
+[[rules]]
+pattern = "DELTA AIR"
+category = "Travel"
+
+[[rules]]
+pattern = "JETBLUE"
+category = "Travel"
+
+[[rules]]
+pattern = "SPIRIT AIR"
+category = "Travel"
+
+[[rules]]
+pattern = "FRONTIER AIR"
+category = "Travel"
+
+[[rules]]
+pattern = "ALASKA AIR"
+category = "Travel"
+
+[[rules]]
+pattern = "HERTZ"
+category = "Travel"
+
+[[rules]]
+pattern = "AVIS"
+category = "Travel"
+
+[[rules]]
+pattern = "ENTERPRISE RENT"
+category = "Travel"
+
+[[rules]]
+pattern = "NATIONAL CAR"
+category = "Travel"
+
+[[rules]]
+pattern = "BUDGET RENT"
+category = "Travel"
+
+[[rules]]
+pattern = "GLOBAL ENTRY"
+category = "Travel"
+
+[[rules]]
+pattern = "TSA PRECHECK"
+category = "Travel"
+
+# ============================================================================
+# UTILITIES
+# ============================================================================
+[[rules]]
+pattern = "ELECTRIC"
+category = "Utilities"
+
+[[rules]]
+pattern = "POWER BILL"
+category = "Utilities"
+
+[[rules]]
+pattern = "GAS BILL"
+category = "Utilities"
+
+[[rules]]
+pattern = "WATER BILL"
+category = "Utilities"
+
+[[rules]]
+pattern = "SEWER"
+category = "Utilities"
+
+[[rules]]
+pattern = "TRASH"
+category = "Utilities"
+
+[[rules]]
+pattern = "WASTE MGMT"
+category = "Utilities"
+
+[[rules]]
+pattern = "COMCAST"
+category = "Utilities"
+
+[[rules]]
+pattern = "XFINITY"
+category = "Utilities"
+
+[[rules]]
+pattern = "SPECTRUM"
+category = "Utilities"
+
+[[rules]]
+pattern = "COX COMM"
+category = "Utilities"
+
+[[rules]]
+pattern = "AT&T"
+category = "Utilities"
+
+[[rules]]
+pattern = "VERIZON"
+category = "Utilities"
+
+[[rules]]
+pattern = "T-MOBILE"
+category = "Utilities"
+
+[[rules]]
+pattern = "SPRINT"
+category = "Utilities"
+
+[[rules]]
+pattern = "MINT MOBILE"
+category = "Utilities"
+
+[[rules]]
+pattern = "GOOGLE FI"
+category = "Utilities"
+
+[[rules]]
+pattern = "VISIBLE"
+category = "Utilities"
+
+# ============================================================================
+# SUBSCRIPTIONS & STREAMING
+# ============================================================================
+[[rules]]
+pattern = "NETFLIX"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "HULU"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "DISNEY+"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "DISNEYPLUS"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "HBO MAX"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "HBOMAX"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "AMAZON PRIME"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "PRIME VIDEO"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "APPLE TV"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "APPLE MUSIC"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "SPOTIFY"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "PANDORA"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "YOUTUBE PREMIUM"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "PEACOCK"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "PARAMOUNT+"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "ESPN+"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "SLING TV"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "FUBO"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "YOUTUBE TV"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "AUDIBLE"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "KINDLE"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "DROPBOX"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "ICLOUD"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "GOOGLE STORAGE"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "GOOGLE ONE"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "MICROSOFT 365"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "ADOBE"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "GITHUB"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "OPENAI"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "CHATGPT"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "ANTHROPIC"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "CLAUDE"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "NEW YORK TIMES"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "WSJ"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "WASHINGTON POST"
+category = "Subscriptions"
+
+[[rules]]
+pattern = "THE ATHLETIC"
+category = "Subscriptions"
+
+# ============================================================================
+# HEALTH & FITNESS
+# ============================================================================
+[[rules]]
+pattern = "CVS"
+category = "Health"
+
+[[rules]]
+pattern = "WALGREENS"
+category = "Health"
+
+[[rules]]
+pattern = "RITE AID"
+category = "Health"
+
+[[rules]]
+pattern = "PHARMACY"
+category = "Health"
+
+[[rules]]
+pattern = "MEDICAL"
+category = "Health"
+
+[[rules]]
+pattern = "DOCTOR"
+category = "Health"
+
+[[rules]]
+pattern = "DENTAL"
+category = "Health"
+
+[[rules]]
+pattern = "DENTIST"
+category = "Health"
+
+[[rules]]
+pattern = "OPTOM"
+category = "Health"
+
+[[rules]]
+pattern = "VISION"
+category = "Health"
+
+[[rules]]
+pattern = "HOSPITAL"
+category = "Health"
+
+[[rules]]
+pattern = "URGENT CARE"
+category = "Health"
+
+[[rules]]
+pattern = "LABCORP"
+category = "Health"
+
+[[rules]]
+pattern = "QUEST DIAG"
+category = "Health"
+
+[[rules]]
+pattern = "PLANET FITNESS"
+category = "Health"
+
+[[rules]]
+pattern = "LA FITNESS"
+category = "Health"
+
+[[rules]]
+pattern = "24 HOUR FITNESS"
+category = "Health"
+
+[[rules]]
+pattern = "EQUINOX"
+category = "Health"
+
+[[rules]]
+pattern = "ORANGETHEORY"
+category = "Health"
+
+[[rules]]
+pattern = "CROSSFIT"
+category = "Health"
+
+[[rules]]
+pattern = "PELOTON"
+category = "Health"
+
+[[rules]]
+pattern = "CLASSPASS"
+category = "Health"
+
+[[rules]]
+pattern = "YMCA"
+category = "Health"
+
+# ============================================================================
+# ENTERTAINMENT
+# ============================================================================
+[[rules]]
+pattern = "AMC THEATRE"
+category = "Entertainment"
+
+[[rules]]
+pattern = "REGAL CINEMA"
+category = "Entertainment"
+
+[[rules]]
+pattern = "CINEMARK"
+category = "Entertainment"
+
+[[rules]]
+pattern = "FANDANGO"
+category = "Entertainment"
+
+[[rules]]
+pattern = "STUBHUB"
+category = "Entertainment"
+
+[[rules]]
+pattern = "TICKETMASTER"
+category = "Entertainment"
+
+[[rules]]
+pattern = "EVENTBRITE"
+category = "Entertainment"
+
+[[rules]]
+pattern = "LIVENATION"
+category = "Entertainment"
+
+[[rules]]
+pattern = "STEAM"
+category = "Entertainment"
+
+[[rules]]
+pattern = "PLAYSTATION"
+category = "Entertainment"
+
+[[rules]]
+pattern = "XBOX"
+category = "Entertainment"
+
+[[rules]]
+pattern = "NINTENDO"
+category = "Entertainment"
+
+[[rules]]
+pattern = "GAMESTOP"
+category = "Entertainment"
+
+[[rules]]
+pattern = "DAVE & BUSTER"
+category = "Entertainment"
+
+[[rules]]
+pattern = "BOWLING"
+category = "Entertainment"
+
+[[rules]]
+pattern = "TOPGOLF"
+category = "Entertainment"
+
+[[rules]]
+pattern = "ESCAPE ROOM"
+category = "Entertainment"
+
+# ============================================================================
+# PERSONAL CARE
+# ============================================================================
+[[rules]]
+pattern = "ULTA"
+category = "Personal Care"
+
+[[rules]]
+pattern = "SEPHORA"
+category = "Personal Care"
+
+[[rules]]
+pattern = "SUPERCUTS"
+category = "Personal Care"
+
+[[rules]]
+pattern = "GREAT CLIPS"
+category = "Personal Care"
+
+[[rules]]
+pattern = "SPORT CLIPS"
+category = "Personal Care"
+
+[[rules]]
+pattern = "SALON"
+category = "Personal Care"
+
+[[rules]]
+pattern = "SPA"
+match = "token"
+category = "Personal Care"
+
+[[rules]]
+pattern = "MASSAGE"
+category = "Personal Care"
+
+[[rules]]
+pattern = "NAIL"
+category = "Personal Care"
+
+[[rules]]
+pattern = "BARBERSHOP"
+category = "Personal Care"
+
+[[rules]]
+pattern = "BARBER"
+category = "Personal Care"
+
+# ============================================================================
+# PETS
+# ============================================================================
+[[rules]]
+pattern = "PETCO"
+category = "Pets"
+
+[[rules]]
+pattern = "PETSMART"
+category = "Pets"
+
+[[rules]]
+pattern = "CHEWY"
+category = "Pets"
+
+[[rules]]
+pattern = "VET"
+match = "token"
+category = "Pets"
+
+[[rules]]
+pattern = "VETERINARY"
+category = "Pets"
+
+[[rules]]
+pattern = "BANFIELD"
+category = "Pets"
+
+[[rules]]
+pattern = "VCA ANIMAL"
+category = "Pets"
+
+# ============================================================================
+# EDUCATION
+# ============================================================================
+[[rules]]
+pattern = "COURSERA"
+category = "Education"
+
+[[rules]]
+pattern = "UDEMY"
+category = "Education"
+
+[[rules]]
+pattern = "SKILLSHARE"
+category = "Education"
+
+[[rules]]
+pattern = "MASTERCLASS"
+category = "Education"
+
+[[rules]]
+pattern = "LINKEDIN LEARNING"
+category = "Education"
+
+[[rules]]
+pattern = "DUOLINGO"
+category = "Education"
+
+[[rules]]
+pattern = "UNIVERSITY"
+category = "Education"
+
+[[rules]]
+pattern = "COLLEGE"
+category = "Education"
+
+[[rules]]
+pattern = "SCHOOL"
+category = "Education"
+
+[[rules]]
+pattern = "TUITION"
+category = "Education"
+
+# ============================================================================
+# CHARITY & DONATIONS
+# ============================================================================
+[[rules]]
+pattern = "DONATION"
+category = "Charity"
+
+[[rules]]
+pattern = "CHARITY"
+category = "Charity"
+
+[[rules]]
+pattern = "GOFUNDME"
+category = "Charity"
+
+[[rules]]
+pattern = "RED CROSS"
+category = "Charity"
+
+[[rules]]
+pattern = "UNITED WAY"
+category = "Charity"
+
+[[rules]]
+pattern = "SALVATION ARMY"
+category = "Charity"
+
+[[rules]]
+pattern = "GOODWILL"
+category = "Charity"
+
+# ============================================================================
+# FINANCIAL SERVICES
+# ============================================================================
+[[rules]]
+pattern = "VENMO"
+category = "Transfers"
+
+[[rules]]
+pattern = "PAYPAL"
+category = "Transfers"
+
+[[rules]]
+pattern = "ZELLE"
+category = "Transfers"
+
+[[rules]]
+pattern = "CASH APP"
+category = "Transfers"
+
+[[rules]]
+pattern = "SQUARE CASH"
+category = "Transfers"
+
+[[rules]]
+pattern = "WIRE TRANSFER"
+category = "Transfers"
+
+[[rules]]
+pattern = "ACH"
+match = "token"
+category = "Transfers"
+
+[[rules]]
+pattern = "COINBASE"
+category = "Investments"
+
+[[rules]]
+pattern = "ROBINHOOD"
+category = "Investments"
+
+[[rules]]
+pattern = "FIDELITY"
+category = "Investments"
+
+[[rules]]
+pattern = "VANGUARD"
+category = "Investments"
+
+[[rules]]
+pattern = "SCHWAB"
+category = "Investments"
+
+[[rules]]
+pattern = "E*TRADE"
+category = "Investments"
+
+[[rules]]
+pattern = "ETRADE"
+category = "Investments"
+
+[[rules]]
+pattern = "TD AMERITRADE"
+category = "Investments"
+
+[[rules]]
+pattern = "INTEREST"
+match = "token"
+category = "Income"
+
+[[rules]]
+pattern = "DIVIDEND"
+category = "Income"
+
+[[rules]]
+pattern = "PAYROLL"
+category = "Income"
+
+[[rules]]
+pattern = "DIRECT DEP"
+category = "Income"
+
+[[rules]]
+pattern = "SALARY"
+category = "Income"
+
+[[rules]]
+pattern = "ATM"
+category = "Cash"
+
+[[rules]]
+pattern = "CASH WITHDRAWAL"
+category = "Cash"
+
+[[rules]]
+pattern = "CASHBACK"
+category = "Cash"
+
+# ============================================================================
+# INSURANCE
+# ============================================================================
+[[rules]]
+pattern = "GEICO"
+category = "Insurance"
+
+[[rules]]
+pattern = "STATE FARM"
+category = "Insurance"
+
+[[rules]]
+pattern = "PROGRESSIVE"
+category = "Insurance"
+
+[[rules]]
+pattern = "ALLSTATE"
+category = "Insurance"
+
+[[rules]]
+pattern = "LIBERTY MUTUAL"
+category = "Insurance"
+
+[[rules]]
+pattern = "USAA"
+category = "Insurance"
+
+[[rules]]
+pattern = "FARMERS INS"
+category = "Insurance"
+
+[[rules]]
+pattern = "NATIONWIDE"
+category = "Insurance"
+
+[[rules]]
+pattern = "HEALTH INS"
+category = "Insurance"
+
+[[rules]]
+pattern = "DENTAL INS"
+category = "Insurance"
+
+[[rules]]
+pattern = "VISION INS"
+category = "Insurance"
+
+[[rules]]
+pattern = "LIFE INS"
+category = "Insurance"
+
+[[rules]]
+pattern = "RENTERS INS"
+category = "Insurance"
+
+[[rules]]
+pattern = "HOME INS"
+category = "Insurance"
+
+# ============================================================================
+# CHILDCARE
+# ============================================================================
+[[rules]]
+pattern = "DAYCARE"
+category = "Childcare"
+
+[[rules]]
+pattern = "KINDERCARE"
+category = "Childcare"
+
+[[rules]]
+pattern = "BRIGHT HORIZONS"
+category = "Childcare"
+
+[[rules]]
+pattern = "TUTOR"
+category = "Childcare"
+
+[[rules]]
+pattern = "NANNY"
+category = "Childcare"
+
+[[rules]]
+pattern = "BABYSIT"
+category = "Childcare"
+
+# ============================================================================
+# HOME SERVICES
+# ============================================================================
+[[rules]]
+pattern = "CLEANING"
+category = "Home Services"
+
+[[rules]]
+pattern = "MAID"
+category = "Home Services"
+
+[[rules]]
+pattern = "LAWN"
+category = "Home Services"
+
+[[rules]]
+pattern = "LANDSCAP"
+category = "Home Services"
+
+[[rules]]
+pattern = "PLUMBER"
+category = "Home Services"
+
+[[rules]]
+pattern = "PLUMBING"
+category = "Home Services"
+
+[[rules]]
+pattern = "ELECTRICIAN"
+category = "Home Services"
+
+[[rules]]
+pattern = "HVAC"
+category = "Home Services"
+
+[[rules]]
+pattern = "ROOFING"
+category = "Home Services"
+
+[[rules]]
+pattern = "HANDYMAN"
+category = "Home Services"
+
+[[rules]]
+pattern = "PEST CONTROL"
+category = "Home Services"
+
+[[rules]]
+pattern = "TERMINIX"
+category = "Home Services"
+
+[[rules]]
+pattern = "ORKIN"
+category = "Home Services"
+
+[[rules]]
+pattern = "ADT SECURITY"
+category = "Home Services"
+
+[[rules]]
+pattern = "SIMPLISAFE"
+category = "Home Services"
+
+[[rules]]
+pattern = "RING"
+match = "token"
+category = "Home Services"
+
+# ============================================================================
+# TAXES & GOVERNMENT
+# ============================================================================
+[[rules]]
+pattern = "IRS"
+match = "token"
+category = "Taxes"
+
+[[rules]]
+pattern = "TAX PAYMENT"
+category = "Taxes"
+
+[[rules]]
+pattern = "TURBOTAX"
+category = "Taxes"
+
+[[rules]]
+pattern = "H&R BLOCK"
+category = "Taxes"
+
+[[rules]]
+pattern = "DMV"
+category = "Government"
+
+[[rules]]
+pattern = "PASSPORT"
+category = "Government"
+
+[[rules]]
+pattern = "POST OFFICE"
+category = "Government"
+
+[[rules]]
+pattern = "USPS"
+category = "Government"
+
+[[rules]]
+pattern = "FEDEX"
+category = "Shipping"
+
+[[rules]]
+pattern = "UPS"
+match = "token"
+category = "Shipping"
+
+[[rules]]
+pattern = "DHL"
+category = "Shipping"
