@@ -1,28 +1,53 @@
 use anyhow::{bail, Context, Result};
 use std::io::{self, Write};
 
-use crate::{db, simplefin::SimpleFin};
+use crate::{config, db, rules, simplefin::SimpleFin};
 
 const ACCESS_URL_KEY: &str = "simplefin_access_url";
 
 pub fn run() -> Result<()> {
-    let conn = db::open().context(
-        "Database not found. Run 'pint init' first.",
+    // Initialize database if needed
+    let db_path = config::db_path()?;
+    let is_new = !db_path.exists();
+
+    let conn = db::init()?;
+
+    if is_new {
+        println!("Initialized database at {}", db_path.display());
+    }
+
+    // Import default rules if rules table is empty
+    let rule_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM merchant_rules",
+        [],
+        |row| row.get(0),
     )?;
 
+    if rule_count == 0 {
+        let (rules_imported, categories_created) = rules::import_rules(&conn)?;
+        if rules_imported > 0 || categories_created > 0 {
+            println!(
+                "Imported {} rules, created {} categories",
+                rules_imported, categories_created
+            );
+        }
+    }
+
+    // Configure SimpleFIN
     if db::get_config(&conn, ACCESS_URL_KEY)?.is_some() {
-        print!("SimpleFIN is already configured. Overwrite? [y/N] ");
+        print!("SimpleFIN is already configured. Reconfigure? [y/N] ");
         io::stdout().flush()?;
 
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
 
         if !input.trim().eq_ignore_ascii_case("y") {
-            println!("Aborted.");
+            println!("Setup complete.");
             return Ok(());
         }
     }
 
+    println!();
     println!("Get your setup token from: https://beta-bridge.simplefin.org/");
     println!();
     print!("Paste your SimpleFIN setup token: ");
