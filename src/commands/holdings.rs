@@ -35,8 +35,8 @@ pub fn run(account_filter: Option<&str>) -> Result<()> {
     }
 
     println!(
-        "{:<8} {:<24} {:>12} {:>14} {:>14}",
-        "SYMBOL", "DESCRIPTION", "SHARES", "COST BASIS", "MKT VALUE"
+        "{:<8} {:<20} {:>10} {:>12} {:>12} {:>10}",
+        "SYMBOL", "DESCRIPTION", "SHARES", "COST", "VALUE", "GAIN/LOSS"
     );
     println!("{}", "-".repeat(76));
 
@@ -45,60 +45,69 @@ pub fn run(account_filter: Option<&str>) -> Result<()> {
 
     for holding in &holdings {
         let symbol = holding.symbol.as_deref().unwrap_or("-");
-        let desc = truncate(holding.description.as_deref().unwrap_or("-"), 24);
+        let desc = truncate(holding.description.as_deref().unwrap_or("-"), 20);
 
-        let cost_str = holding
-            .cost_basis_dollars()
-            .map(|v| format!("{:>14.2}", v))
-            .unwrap_or_else(|| "           N/A".to_string());
+        let cost = holding.cost_basis.unwrap_or(0);
+        let value = holding.market_value.unwrap_or(0);
+        let gain = value - cost;
+        let gain_pct = if cost > 0 {
+            (gain as f64 / cost as f64) * 100.0
+        } else {
+            0.0
+        };
 
-        let value_str = holding
-            .market_value_dollars()
-            .map(|v| format!("{:>14.2}", v))
-            .unwrap_or_else(|| "           N/A".to_string());
+        let cost_str = if holding.cost_basis.is_some() {
+            format!("{:>12.2}", cost as f64 / 100.0)
+        } else {
+            "         N/A".to_string()
+        };
+
+        let value_str = if holding.market_value.is_some() {
+            format!("{:>12.2}", value as f64 / 100.0)
+        } else {
+            "         N/A".to_string()
+        };
+
+        let gain_str = if holding.cost_basis.is_some() && holding.market_value.is_some() {
+            format!("{:+.1}%", gain_pct)
+        } else {
+            "N/A".to_string()
+        };
 
         println!(
-            "{:<8} {:<24} {:>12} {} {}",
+            "{:<8} {:<20} {:>10} {} {} {:>10}",
             truncate(symbol, 8),
             desc,
-            truncate(&holding.shares, 12),
+            truncate(&holding.shares, 10),
             cost_str,
             value_str,
+            gain_str,
         );
 
-        if let Some(cost) = holding.cost_basis {
-            total_cost += cost;
+        if let Some(c) = holding.cost_basis {
+            total_cost += c;
         }
-        if let Some(value) = holding.market_value {
-            total_value += value;
+        if let Some(v) = holding.market_value {
+            total_value += v;
         }
     }
 
+    let total_gain = total_value - total_cost;
+    let total_gain_pct = if total_cost > 0 {
+        (total_gain as f64 / total_cost as f64) * 100.0
+    } else {
+        0.0
+    };
+
     println!("{}", "-".repeat(76));
     println!(
-        "{:<8} {:<24} {:>12} {:>14.2} {:>14.2}",
+        "{:<8} {:<20} {:>10} {:>12.2} {:>12.2} {:>+10.1}%",
         "",
         "TOTAL",
         "",
         total_cost as f64 / 100.0,
         total_value as f64 / 100.0,
-    );
-
-    let gain = total_value - total_cost;
-    let gain_pct = if total_cost > 0 {
-        (gain as f64 / total_cost as f64) * 100.0
-    } else {
-        0.0
-    };
-
-    println!(
-        "{:<8} {:<24} {:>12} {:>14} {:>14.2} ({:+.1}%)",
-        "",
-        "GAIN/LOSS",
-        "",
-        "",
-        gain as f64 / 100.0,
-        gain_pct,
+        total_gain_pct,
     );
 
     Ok(())
