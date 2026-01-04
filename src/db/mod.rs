@@ -44,16 +44,42 @@ pub struct MerchantRuleEntry {
 
 pub fn open() -> Result<Connection> {
     let db_path = config::db_path()?;
+    if !db_path.exists() {
+        anyhow::bail!("Database not found at {}", db_path.display());
+    }
     open_at(&db_path)
 }
 
 pub fn open_at(path: &Path) -> Result<Connection> {
+    if !path.exists() {
+        anyhow::bail!("Database not found at {}", path.display());
+    }
+
     let conn = Connection::open(path)
         .with_context(|| format!("Failed to open database at {}", path.display()))?;
 
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
 
-    // Run migrations to ensure schema is up to date
+    if !schema::is_initialized(&conn)? {
+        anyhow::bail!(
+            "Database at {} is not initialized. Run 'pint init' first.",
+            path.display()
+        );
+    }
+
+    // Run migrations to ensure schema is up to date.
+    schema::migrate(&conn)?;
+
+    Ok(conn)
+}
+
+fn open_or_create_at(path: &Path) -> Result<Connection> {
+    let conn = Connection::open(path)
+        .with_context(|| format!("Failed to open database at {}", path.display()))?;
+
+    conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+
+    schema::create_tables(&conn)?;
     schema::migrate(&conn)?;
 
     Ok(conn)
@@ -61,10 +87,8 @@ pub fn open_at(path: &Path) -> Result<Connection> {
 
 pub fn init() -> Result<Connection> {
     config::ensure_data_dir()?;
-    let conn = open()?;
-    schema::create_tables(&conn)?;
-    schema::migrate(&conn)?;
-    Ok(conn)
+    let db_path = config::db_path()?;
+    open_or_create_at(&db_path)
 }
 
 pub fn get_config(conn: &Connection, key: &str) -> Result<Option<String>> {

@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -80,8 +81,11 @@ fn normalize_account_type(t: &str) -> &'static str {
 }
 
 impl Transaction {
-    pub fn amount_cents(&self) -> i64 {
-        parse_amount_to_cents(&self.amount).unwrap_or(0)
+    pub fn amount_cents(&self) -> Result<i64> {
+        parse_amount_to_cents(&self.amount).context(format!(
+            "Invalid transaction amount '{}' for transaction id {}",
+            self.amount, self.id
+        ))
     }
 }
 
@@ -91,8 +95,56 @@ fn parse_amount_to_cents(amount: &str) -> Option<i64> {
         return None;
     }
 
-    let parsed: f64 = amount.parse().ok()?;
-    Some((parsed * 100.0).round() as i64)
+    let (sign, rest) = match amount.as_bytes().first() {
+        Some(b'-') => (-1_i64, amount[1..].trim()),
+        Some(b'+') => (1_i64, amount[1..].trim()),
+        _ => (1_i64, amount),
+    };
+
+    if rest.is_empty() {
+        return None;
+    }
+
+    let mut parts = rest.splitn(2, '.');
+    let whole_part = parts.next().unwrap_or("");
+    let frac_part = parts.next().unwrap_or("");
+
+    let whole_part = if whole_part.is_empty() { "0" } else { whole_part };
+
+    if !whole_part.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    if !frac_part.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+
+    let whole: i64 = whole_part.parse().ok()?;
+
+    let mut frac_iter = frac_part.chars();
+    let d1 = frac_iter.next().unwrap_or('0').to_digit(10)? as i64;
+    let d2 = frac_iter.next().unwrap_or('0').to_digit(10)? as i64;
+    let d3 = frac_iter.next().unwrap_or('0').to_digit(10)? as i64;
+
+    let mut cents = d1 * 10 + d2;
+    let mut carry = 0_i64;
+    if frac_part.len() > 2 && d3 >= 5 {
+        cents += 1;
+        if cents == 100 {
+            cents = 0;
+            carry = 1;
+        }
+    }
+
+    let total = whole
+        .checked_mul(100)?
+        .checked_add(cents)?
+        .checked_add(carry)?;
+
+    if sign == 1 {
+        Some(total)
+    } else {
+        total.checked_neg()
+    }
 }
 
 #[cfg(test)]
@@ -105,5 +157,9 @@ mod tests {
         assert_eq!(parse_amount_to_cents("-33.50"), Some(-3350));
         assert_eq!(parse_amount_to_cents("0"), Some(0));
         assert_eq!(parse_amount_to_cents(""), None);
+        assert_eq!(parse_amount_to_cents("1.2"), Some(120));
+        assert_eq!(parse_amount_to_cents(".5"), Some(50));
+        assert_eq!(parse_amount_to_cents("12.345"), Some(1235));
+        assert_eq!(parse_amount_to_cents("-12.345"), Some(-1235));
     }
 }

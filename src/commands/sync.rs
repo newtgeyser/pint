@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use chrono::{Duration, NaiveDate, TimeZone, Utc};
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 
 use crate::{db, rules, simplefin::{SimpleFin, AccountSet}};
 
@@ -18,7 +18,7 @@ struct SyncStats {
 pub fn run(days: u32) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
     let access_url = get_access_url(&conn)?;
-    let client = SimpleFin::new(access_url);
+    let client = SimpleFin::new(access_url)?;
 
     let now = Utc::now();
     let start = now - Duration::days(days as i64);
@@ -40,7 +40,7 @@ pub fn run(days: u32) -> Result<()> {
 pub fn run_backfill(from: Option<NaiveDate>) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
     let access_url = get_access_url(&conn)?;
-    let client = SimpleFin::new(access_url);
+    let client = SimpleFin::new(access_url)?;
 
     let mut end = match from {
         Some(date) => Utc.from_utc_datetime(&date.and_hms_opt(23, 59, 59).unwrap()),
@@ -74,6 +74,17 @@ pub fn run_backfill(from: Option<NaiveDate>) -> Result<()> {
         );
 
         let account_set = client.fetch_accounts(Some(start.timestamp()), Some(end.timestamp()))?;
+        let returned_tx_count: usize = account_set
+            .accounts
+            .iter()
+            .map(|a| a.transactions.len())
+            .sum();
+
+        if returned_tx_count == 0 {
+            println!("  No transaction data returned, stopping backfill.");
+            break;
+        }
+
         let stats = import_accounts(&conn, &account_set)?;
 
         println!(
@@ -83,12 +94,6 @@ pub fn run_backfill(from: Option<NaiveDate>) -> Result<()> {
 
         total_inserted += stats.inserted;
         total_updated += stats.updated;
-
-        // Stop if no new transactions (institution likely not providing older data)
-        if stats.inserted == 0 {
-            println!("  No new transactions found, stopping backfill.");
-            break;
-        }
 
         // Move window back
         end = start;
@@ -159,52 +164,36 @@ fn import_transaction(
     tx: &crate::simplefin::Transaction,
     now_ts: i64,
 ) -> Result<(usize, usize)> {
-    // Check if transaction exists by ID or by dedup key
-    let existing: Option<(String, bool)> = conn
-        .query_row(
-            "SELECT id, pending FROM transactions
-             WHERE id = ?1
-                OR (account_id = ?2 AND posted = ?3 AND amount = ?4 AND description = ?5)",
-            rusqlite::params![
-                tx.id,
-                account_id,
-                tx.posted,
-                tx.amount_cents(),
-                tx.description,
-            ],
-            |row| Ok((row.get(0)?, row.get::<_, i64>(1)? != 0)),
-        )
-        .optional()?;
+    let amount_cents = tx.amount_cents()?;
 
-    match existing {
-        Some((id, old_pending)) => {
-            if old_pending != tx.pending {
-                conn.execute(
-                    "UPDATE transactions SET pending = ?1, updated_at = ?2 WHERE id = ?3",
-                    rusqlite::params![tx.pending as i64, now_ts, id],
-                )?;
-                Ok((0, 1))
-            } else {
-                Ok((0, 0))
-            }
-        }
-        None => {
-            conn.execute(
-                "INSERT INTO transactions (id, account_id, posted, amount, description, pending, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
-                rusqlite::params![
-                    tx.id,
-                    account_id,
-                    tx.posted,
-                    tx.amount_cents(),
-                    tx.description,
-                    tx.pending as i64,
-                    now_ts,
-                ],
-            )?;
-            Ok((1, 0))
-        }
-    }
+    let existed: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM transactions WHERE id = ?1)",
+        [tx.id.as_str()],
+        |row| row.get(0),
+    )?;
+
+    conn.execute(
+        "INSERT INTO transactions (id, account_id, posted, amount, description, pending, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+         ON CONFLICT(id) DO UPDATE SET
+            account_id = excluded.account_id,
+            posted = excluded.posted,
+            amount = excluded.amount,
+            description = excluded.description,
+            pending = excluded.pending,
+            updated_at = excluded.updated_at",
+        rusqlite::params![
+            tx.id,
+            account_id,
+            tx.posted,
+            amount_cents,
+            tx.description,
+            tx.pending as i64,
+            now_ts,
+        ],
+    )?;
+
+    Ok(((!existed) as usize, existed as usize))
 }
 
 fn auto_categorize(conn: &Connection) -> Result<()> {

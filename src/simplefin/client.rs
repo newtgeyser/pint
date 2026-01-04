@@ -1,8 +1,11 @@
 use anyhow::{bail, Context, Result};
 use base64::prelude::*;
 use reqwest::blocking::Client;
+use std::time::Duration;
 
 use super::types::AccountSet;
+
+const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct SimpleFin {
     client: Client,
@@ -10,11 +13,13 @@ pub struct SimpleFin {
 }
 
 impl SimpleFin {
-    pub fn new(access_url: String) -> Self {
-        Self {
-            client: Client::new(),
-            access_url,
-        }
+    pub fn new(access_url: String) -> Result<Self> {
+        let client = Client::builder()
+            .timeout(HTTP_TIMEOUT)
+            .build()
+            .context("Failed to build HTTP client")?;
+
+        Ok(Self { client, access_url })
     }
 
     pub fn exchange_token(setup_token: &str) -> Result<String> {
@@ -26,7 +31,10 @@ impl SimpleFin {
         )
         .context("Invalid setup token: not valid UTF-8")?;
 
-        let client = Client::new();
+        let client = Client::builder()
+            .timeout(HTTP_TIMEOUT)
+            .build()
+            .context("Failed to build HTTP client")?;
         let response = client
             .post(&claim_url)
             .send()
@@ -44,7 +52,11 @@ impl SimpleFin {
         Ok(access_url.trim().to_string())
     }
 
-    pub fn fetch_accounts(&self, start_date: Option<i64>, end_date: Option<i64>) -> Result<AccountSet> {
+    pub fn fetch_accounts(
+        &self,
+        start_date: Option<i64>,
+        end_date: Option<i64>,
+    ) -> Result<AccountSet> {
         let mut url = format!("{}/accounts", self.access_url);
 
         let mut params = Vec::new();

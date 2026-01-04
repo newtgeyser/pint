@@ -1,5 +1,28 @@
 use anyhow::Result;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
+
+pub fn is_initialized(conn: &Connection) -> Result<bool> {
+    let required_tables = [
+        "accounts",
+        "categories",
+        "transactions",
+        "merchant_rules",
+        "config",
+    ];
+
+    for table in required_tables {
+        let exists: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+            [table],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
 
 pub fn create_tables(conn: &Connection) -> Result<()> {
     conn.execute_batch(
@@ -32,8 +55,7 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
             pending INTEGER DEFAULT 0,
             category_id INTEGER REFERENCES categories(id),
             created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL,
-            UNIQUE(account_id, posted, amount, description)
+            updated_at INTEGER NOT NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_transactions_account
@@ -94,6 +116,56 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);",
     )?;
+
+    // Remove the overly-aggressive UNIQUE(account_id, posted, amount, description) constraint
+    // (SQLite requires a table rebuild to remove a table-level UNIQUE constraint).
+    let transactions_sql: Option<String> = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    let has_legacy_dedup_constraint = transactions_sql
+        .as_deref()
+        .is_some_and(|sql| sql.contains("UNIQUE(account_id, posted, amount, description)"));
+
+    if has_legacy_dedup_constraint {
+        conn.execute_batch(
+            "
+            PRAGMA foreign_keys = OFF;
+            BEGIN;
+
+            ALTER TABLE transactions RENAME TO transactions_old;
+
+            CREATE TABLE transactions (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL REFERENCES accounts(id),
+                posted INTEGER NOT NULL,
+                amount INTEGER NOT NULL,
+                description TEXT NOT NULL,
+                pending INTEGER DEFAULT 0,
+                category_id INTEGER REFERENCES categories(id),
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            INSERT INTO transactions (id, account_id, posted, amount, description, pending, category_id, created_at, updated_at)
+            SELECT id, account_id, posted, amount, description, pending, category_id, created_at, updated_at
+            FROM transactions_old;
+
+            DROP TABLE transactions_old;
+
+            CREATE INDEX idx_transactions_account ON transactions(account_id);
+            CREATE INDEX idx_transactions_posted ON transactions(posted);
+            CREATE INDEX idx_transactions_category ON transactions(category_id);
+
+            COMMIT;
+            PRAGMA foreign_keys = ON;
+            ",
+        )?;
+    }
 
     Ok(())
 }
