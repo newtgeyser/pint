@@ -58,6 +58,7 @@ pint transactions
 | `pint init` | Initialize the database |
 | `pint setup` | Configure SimpleFIN access (one-time) |
 | `pint sync [--days N]` | Fetch transactions (default: 30, max: 60) |
+| `pint backfill` | Fetch historical transactions (up to ~2 years) |
 
 ### Viewing Data
 
@@ -157,6 +158,7 @@ Edit `~/.local/share/pint/rules.toml` to customize, then run `pint import-rules`
 ### Working
 
 - SimpleFIN integration (token exchange, account/transaction sync)
+- Historical backfill (fetches in 60-day chunks, up to ~2 years)
 - SQLite storage with proper schema
 - Transaction listing with filters
 - Merchant-based auto-categorization
@@ -165,7 +167,6 @@ Edit `~/.local/share/pint/rules.toml` to customize, then run `pint import-rules`
 
 ### Not Yet Implemented
 
-- [ ] Historical backfill (chunked fetching beyond 60-day SimpleFIN limit)
 - [ ] Transfer linking (mark two transactions as a transfer pair)
 - [ ] Transaction notes/tags
 - [ ] Spending reports and summaries
@@ -181,6 +182,8 @@ Edit `~/.local/share/pint/rules.toml` to customize, then run `pint import-rules`
 - Date range: 60 days max per request
 - Setup token can only be exchanged once
 - Access URL is stored in the database
+- Backfill makes up to 12 requests (60 days each) to fetch ~2 years of history
+- Backfill stops early if no new transactions are found (institution limit)
 
 ## License
 

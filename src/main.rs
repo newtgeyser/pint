@@ -35,6 +35,9 @@ enum Commands {
         days: u32,
     },
 
+    /// Backfill historical transactions (up to ~2 years)
+    Backfill,
+
     /// List accounts
     Accounts,
 
@@ -129,6 +132,8 @@ fn main() -> Result<()> {
             let days = days.min(60);
             commands::sync::run(days)
         }
+
+        Commands::Backfill => commands::sync::run_backfill(),
 
         Commands::Accounts => commands::accounts::run(),
 
