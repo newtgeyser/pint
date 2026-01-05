@@ -154,7 +154,7 @@ impl App {
                  JOIN accounts a ON t.account_id = a.id
                  WHERE a.id LIKE '%' || ?1 || '%' OR a.nickname LIKE '%' || ?1 || '%' OR a.name LIKE '%' || ?1 || '%'
                  ORDER BY t.posted DESC
-                 LIMIT 100".to_string(),
+                 LIMIT 2000".to_string(),
                 vec![account_filter.clone()]
             )
         } else {
@@ -165,7 +165,7 @@ impl App {
                  LEFT JOIN categories c ON t.category_id = c.id
                  JOIN accounts a ON t.account_id = a.id
                  ORDER BY t.posted DESC
-                 LIMIT 100".to_string(),
+                 LIMIT 2000".to_string(),
                 vec![]
             )
         };

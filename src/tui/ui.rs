@@ -25,17 +25,21 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 }
 
 fn draw_title(frame: &mut Frame, app: &App, area: Rect) {
+    let account_filter = app.filter_account.as_ref()
+        .map(|acc| format!(" [{}]", truncate(acc, 20)))
+        .unwrap_or_default();
+
     let detail = match app.current_view {
         View::Accounts => {
             let total = app.accounts_total();
             format!("  Total: ${}", format_amount(total, "USD"))
         }
         View::Transactions => {
-            format!("  {} transactions", app.transactions.len())
+            format!("{}  {} transactions", account_filter, app.transactions.len())
         }
         View::Holdings => {
             let total = app.holdings_total();
-            format!("  {} holdings  Total: ${}", app.holdings.len(), format_amount(total, "USD"))
+            format!("{}  {} holdings  Total: ${}", account_filter, app.holdings.len(), format_amount(total, "USD"))
         }
         View::Assets => {
             let total = app.assets_total();
@@ -156,7 +160,7 @@ fn draw_accounts(frame: &mut Frame, app: &mut App, area: Rect) {
             Row::new(vec![
                 truncate(&type_str, 12).to_string(),
                 truncate(account.display_name(), 24).to_string(),
-                balance_str,
+                format!("{:>12}", balance_str),
                 account.currency.clone(),
             ])
         })
@@ -291,10 +295,10 @@ fn draw_holdings(frame: &mut Frame, app: &mut App, area: Rect) {
             Row::new(vec![
                 truncate(symbol, 8).to_string(),
                 truncate(desc, 20).to_string(),
-                truncate(&h.shares, 10).to_string(),
-                price_str,
-                value_str,
-                gain_str,
+                format!("{:>12}", truncate(&h.shares, 12)),
+                format!("{:>10}", price_str),
+                format!("{:>12}", value_str),
+                format!("{:>10}", gain_str),
             ])
         })
         .collect();
@@ -352,9 +356,9 @@ fn draw_assets(frame: &mut Frame, app: &mut App, area: Rect) {
                 a.id.to_string(),
                 truncate(&a.asset_type, 12).to_string(),
                 truncate(&a.name, 24).to_string(),
-                value_str,
-                cost_str,
-                gain_str,
+                format!("{:>12}", value_str),
+                format!("{:>12}", cost_str),
+                format!("{:>10}", gain_str),
             ])
         })
         .collect();
