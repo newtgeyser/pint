@@ -1,12 +1,12 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::Span,
-    widgets::{Block, Borders, List, ListItem, Paragraph, Row, Table, HighlightSpacing},
+    text::{Line, Span},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Row, Table, HighlightSpacing},
     Frame,
 };
 
-use super::app::{format_amount, App, View};
+use super::app::{format_amount, App, DialogType, View};
 use crate::util::truncate;
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
@@ -22,6 +22,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     draw_title(frame, app, chunks[0]);
     draw_content(frame, app, chunks[1]);
     draw_status_bar(frame, app, chunks[2]);
+
+    // Draw dialog overlay if active
+    if app.has_dialog() {
+        draw_dialog(frame, app);
+    }
 }
 
 fn draw_title(frame: &mut Frame, app: &App, area: Rect) {
@@ -481,18 +486,39 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::DarkGray));
 
-    let help_text = if app.is_searching() {
+    let help_text = if app.has_dialog() {
+        "Enter:Confirm  Esc:Cancel  Tab:Next field".to_string()
+    } else if app.is_searching() {
         format!("Search: {}█  (Esc to cancel)", app.search_query)
     } else if let Some(ref msg) = app.status {
         msg.clone()
+    } else if !app.has_interacted {
+        // Show general help on first launch
+        "q:Quit  Tab:Switch pane  ↑↓/jk:Navigate  PgUp/PgDn:Page  Enter:Select".to_string()
     } else {
-        let base = "q:Quit  Tab:Switch  ↑↓/jk:Navigate  PgUp/PgDn:Page  Enter:Select";
-        let extra = match app.current_view {
-            View::Transactions => "  /:Search",
-            View::Accounts => "  Enter:View transactions",
-            _ => "",
-        };
-        format!("{}{}", base, extra)
+        // Show view-specific commands after user interacts
+        match app.current_view {
+            View::Accounts => {
+                "a:Add  d:Remove  r:Rename  t:Set type  Enter:View  /:Search  q:Quit".to_string()
+            }
+            View::Transactions => {
+                let filter_status = if app.filter_account.is_some() || !app.search_query.is_empty() {
+                    "  c:Clear filters"
+                } else {
+                    ""
+                };
+                format!("/:Search  f:Filter account{}  q:Quit", filter_status)
+            }
+            View::Holdings => {
+                "Enter:View details  q:Quit".to_string()
+            }
+            View::Assets => {
+                "a:Add  d:Remove  e:Edit  q:Quit".to_string()
+            }
+            View::Rules => {
+                "i:Import  p:Apply rules  q:Quit".to_string()
+            }
+        }
     };
 
     let status = Paragraph::new(help_text)
@@ -500,4 +526,114 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         .block(status_block);
 
     frame.render_widget(status, area);
+}
+
+fn draw_dialog(frame: &mut Frame, app: &App) {
+    let dialog = match &app.dialog {
+        Some(d) => d,
+        None => return,
+    };
+
+    // Calculate dialog size and position (centered)
+    let area = frame.area();
+    let dialog_width = 60.min(area.width.saturating_sub(4));
+    let dialog_height = match &dialog.dialog_type {
+        DialogType::Confirm { .. } => 7,
+        DialogType::Input { .. } => 7,
+        DialogType::TwoInputs { .. } => 10,
+    };
+
+    let dialog_x = (area.width.saturating_sub(dialog_width)) / 2;
+    let dialog_y = (area.height.saturating_sub(dialog_height)) / 2;
+
+    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
+
+    // Clear the area behind the dialog
+    frame.render_widget(Clear, dialog_area);
+
+    // Draw dialog content based on type
+    match &dialog.dialog_type {
+        DialogType::Confirm { title, message } => {
+            let block = Block::default()
+                .title(format!(" {} ", title))
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Yellow));
+
+            let inner = block.inner(dialog_area);
+            frame.render_widget(block, dialog_area);
+
+            let text = vec![
+                Line::from(""),
+                Line::from(Span::raw(message.clone())),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "Enter to confirm, Esc to cancel",
+                    Style::default().fg(Color::Gray),
+                )),
+            ];
+
+            let paragraph = Paragraph::new(text);
+            frame.render_widget(paragraph, inner);
+        }
+
+        DialogType::Input { title, prompt } => {
+            let block = Block::default()
+                .title(format!(" {} ", title))
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Cyan));
+
+            let inner = block.inner(dialog_area);
+            frame.render_widget(block, dialog_area);
+
+            let text = vec![
+                Line::from(Span::raw(prompt.clone())),
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("{}█", dialog.input1),
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                )),
+            ];
+
+            let paragraph = Paragraph::new(text);
+            frame.render_widget(paragraph, inner);
+        }
+
+        DialogType::TwoInputs { title, prompt1, prompt2, focused } => {
+            let block = Block::default()
+                .title(format!(" {} ", title))
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Cyan));
+
+            let inner = block.inner(dialog_area);
+            frame.render_widget(block, dialog_area);
+
+            let input1_style = if *focused == 0 {
+                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+
+            let input2_style = if *focused == 1 {
+                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+
+            let cursor1 = if *focused == 0 { "█" } else { "" };
+            let cursor2 = if *focused == 1 { "█" } else { "" };
+
+            let text = vec![
+                Line::from(Span::raw(prompt1.clone())),
+                Line::from(Span::styled(format!("{}{}", dialog.input1, cursor1), input1_style)),
+                Line::from(""),
+                Line::from(Span::raw(prompt2.clone())),
+                Line::from(Span::styled(format!("{}{}", dialog.input2, cursor2), input2_style)),
+                Line::from(""),
+                Line::from(Span::styled("Tab to switch fields", Style::default().fg(Color::DarkGray))),
+            ];
+
+            let paragraph = Paragraph::new(text);
+            frame.render_widget(paragraph, inner);
+        }
+    }
 }

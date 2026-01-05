@@ -33,6 +33,48 @@ impl View {
     }
 }
 
+/// Type of dialog currently active
+#[derive(Clone, PartialEq, Eq)]
+pub enum DialogType {
+    /// Confirmation dialog (e.g., delete confirmation)
+    Confirm {
+        title: String,
+        message: String,
+    },
+    /// Single text input
+    Input {
+        title: String,
+        prompt: String,
+    },
+    /// Two text inputs (e.g., add account: name + type)
+    TwoInputs {
+        title: String,
+        prompt1: String,
+        prompt2: String,
+        /// Which input is focused (0 or 1)
+        focused: usize,
+    },
+}
+
+/// Dialog state
+pub struct Dialog {
+    pub dialog_type: DialogType,
+    pub input1: String,
+    pub input2: String,
+    pub action: DialogAction,
+}
+
+/// What action to perform when dialog is confirmed
+#[derive(Clone, PartialEq, Eq)]
+pub enum DialogAction {
+    AddAccount,
+    RemoveAccount { account_id: String },
+    RenameAccount { account_id: String },
+    SetAccountType { account_id: String },
+    FilterByAccount,
+    FilterByDate,
+}
+
 pub struct App {
     pub conn: Connection,
     pub current_view: View,
@@ -61,6 +103,12 @@ pub struct App {
 
     // Status message
     pub status: Option<String>,
+
+    // Dialog state
+    pub dialog: Option<Dialog>,
+
+    // Track if user has interacted (to show context-specific help)
+    pub has_interacted: bool,
 }
 
 #[derive(Clone)]
@@ -108,6 +156,9 @@ impl App {
             filter_account: None,
 
             status: None,
+
+            dialog: None,
+            has_interacted: false,
         }
     }
 
@@ -449,6 +500,208 @@ impl App {
     /// Calculate total market value of displayed holdings in cents
     pub fn holdings_total(&self) -> i64 {
         self.holdings.iter().filter_map(|h| h.market_value).sum()
+    }
+
+    // Dialog methods
+
+    pub fn has_dialog(&self) -> bool {
+        self.dialog.is_some()
+    }
+
+    pub fn show_dialog(&mut self, dialog_type: DialogType, action: DialogAction) {
+        self.dialog = Some(Dialog {
+            dialog_type,
+            input1: String::new(),
+            input2: String::new(),
+            action,
+        });
+    }
+
+    pub fn close_dialog(&mut self) {
+        self.dialog = None;
+    }
+
+    pub fn dialog_input(&mut self, c: char) {
+        if let Some(ref mut dialog) = self.dialog {
+            match &dialog.dialog_type {
+                DialogType::Confirm { .. } => {}
+                DialogType::Input { .. } => {
+                    dialog.input1.push(c);
+                }
+                DialogType::TwoInputs { focused, .. } => {
+                    if *focused == 0 {
+                        dialog.input1.push(c);
+                    } else {
+                        dialog.input2.push(c);
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn dialog_backspace(&mut self) {
+        if let Some(ref mut dialog) = self.dialog {
+            match &dialog.dialog_type {
+                DialogType::Confirm { .. } => {}
+                DialogType::Input { .. } => {
+                    dialog.input1.pop();
+                }
+                DialogType::TwoInputs { focused, .. } => {
+                    if *focused == 0 {
+                        dialog.input1.pop();
+                    } else {
+                        dialog.input2.pop();
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn dialog_next_field(&mut self) {
+        if let Some(ref mut dialog) = self.dialog {
+            if let DialogType::TwoInputs { ref mut focused, .. } = dialog.dialog_type {
+                *focused = (*focused + 1) % 2;
+            }
+        }
+    }
+
+    pub fn dialog_confirm(&mut self) -> Result<()> {
+        if let Some(dialog) = self.dialog.take() {
+            match dialog.action {
+                DialogAction::AddAccount => {
+                    if !dialog.input1.is_empty() && !dialog.input2.is_empty() {
+                        self.execute_add_account(&dialog.input1, &dialog.input2)?;
+                    }
+                }
+                DialogAction::RemoveAccount { account_id } => {
+                    self.execute_remove_account(&account_id)?;
+                }
+                DialogAction::RenameAccount { account_id } => {
+                    let nickname = if dialog.input1.is_empty() { None } else { Some(dialog.input1.as_str()) };
+                    self.execute_rename_account(&account_id, nickname)?;
+                }
+                DialogAction::SetAccountType { account_id } => {
+                    if !dialog.input1.is_empty() {
+                        self.execute_set_account_type(&account_id, &dialog.input1)?;
+                    }
+                }
+                DialogAction::FilterByAccount => {
+                    if !dialog.input1.is_empty() {
+                        self.filter_account = Some(dialog.input1);
+                        self.load_data()?;
+                    }
+                }
+                DialogAction::FilterByDate => {
+                    // TODO: implement date filtering
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // Account actions
+
+    pub fn show_add_account_dialog(&mut self) {
+        self.show_dialog(
+            DialogType::TwoInputs {
+                title: "Add Manual Account".to_string(),
+                prompt1: "Account name".to_string(),
+                prompt2: "Type (checking/savings/credit/brokerage/retirement/loan)".to_string(),
+                focused: 0,
+            },
+            DialogAction::AddAccount,
+        );
+    }
+
+    pub fn show_remove_account_dialog(&mut self) {
+        let selected = self.accounts_state.selected().unwrap_or(0);
+        if let Some(account) = self.accounts.get(selected) {
+            let account_id = account.id.clone();
+            let name = account.display_name().to_string();
+            self.show_dialog(
+                DialogType::Confirm {
+                    title: "Remove Account".to_string(),
+                    message: format!("Remove '{}' and all its transactions?", name),
+                },
+                DialogAction::RemoveAccount { account_id },
+            );
+        }
+    }
+
+    pub fn show_rename_account_dialog(&mut self) {
+        let selected = self.accounts_state.selected().unwrap_or(0);
+        if let Some(account) = self.accounts.get(selected) {
+            let account_id = account.id.clone();
+            self.show_dialog(
+                DialogType::Input {
+                    title: "Rename Account".to_string(),
+                    prompt: "New nickname (empty to clear)".to_string(),
+                },
+                DialogAction::RenameAccount { account_id },
+            );
+        }
+    }
+
+    pub fn show_set_type_dialog(&mut self) {
+        let selected = self.accounts_state.selected().unwrap_or(0);
+        if let Some(account) = self.accounts.get(selected) {
+            let account_id = account.id.clone();
+            self.show_dialog(
+                DialogType::Input {
+                    title: "Set Account Type".to_string(),
+                    prompt: "Type (checking/savings/credit/brokerage/retirement/loan)".to_string(),
+                },
+                DialogAction::SetAccountType { account_id },
+            );
+        }
+    }
+
+    fn execute_add_account(&mut self, name: &str, account_type: &str) -> Result<()> {
+        crate::commands::accounts::add(name, account_type)?;
+        self.load_accounts()?;
+        self.status = Some(format!("Added account '{}'", name));
+        Ok(())
+    }
+
+    fn execute_remove_account(&mut self, account_id: &str) -> Result<()> {
+        crate::commands::accounts::remove(account_id)?;
+        self.load_accounts()?;
+        self.status = Some("Account removed".to_string());
+        Ok(())
+    }
+
+    fn execute_rename_account(&mut self, account_id: &str, nickname: Option<&str>) -> Result<()> {
+        crate::commands::accounts::set_nickname(account_id, nickname)?;
+        self.load_accounts()?;
+        self.status = Some("Account renamed".to_string());
+        Ok(())
+    }
+
+    fn execute_set_account_type(&mut self, account_id: &str, account_type: &str) -> Result<()> {
+        crate::commands::accounts::set_type(account_id, account_type)?;
+        self.load_accounts()?;
+        self.status = Some("Account type updated".to_string());
+        Ok(())
+    }
+
+    // Transaction filter actions
+
+    pub fn show_filter_account_dialog(&mut self) {
+        self.show_dialog(
+            DialogType::Input {
+                title: "Filter by Account".to_string(),
+                prompt: "Account name or ID".to_string(),
+            },
+            DialogAction::FilterByAccount,
+        );
+    }
+
+    pub fn clear_filters(&mut self) -> Result<()> {
+        self.filter_account = None;
+        self.search_query.clear();
+        self.load_data()?;
+        self.status = Some("Filters cleared".to_string());
+        Ok(())
     }
 }
 

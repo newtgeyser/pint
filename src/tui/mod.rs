@@ -12,7 +12,7 @@ use crossterm::{
 use ratatui::prelude::*;
 
 use crate::db;
-use app::App;
+use app::{App, View};
 
 pub fn run() -> Result<()> {
     // Initialize database
@@ -53,15 +53,46 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                 continue;
             }
 
+            // Clear status message on any key press
+            app.status = None;
+
+            // Mark as interacted after first key
+            if !app.has_interacted {
+                app.has_interacted = true;
+            }
+
+            // Handle dialog mode first
+            if app.has_dialog() {
+                match key.code {
+                    KeyCode::Esc => app.close_dialog(),
+                    KeyCode::Enter => app.dialog_confirm()?,
+                    KeyCode::Tab => app.dialog_next_field(),
+                    KeyCode::Backspace => app.dialog_backspace(),
+                    KeyCode::Char(c) => app.dialog_input(c),
+                    _ => {}
+                }
+                continue;
+            }
+
+            // Handle search mode
+            if app.is_searching() {
+                match key.code {
+                    KeyCode::Esc => app.cancel_search(),
+                    KeyCode::Enter => {
+                        app.search_mode = false;
+                        // Keep the search query active
+                    }
+                    KeyCode::Backspace => app.search_backspace(),
+                    KeyCode::Char(c) => app.search_input(c),
+                    _ => {}
+                }
+                continue;
+            }
+
+            // Normal mode - handle navigation and view-specific keys
             match key.code {
                 KeyCode::Char('q') => return Ok(()),
-                KeyCode::Esc => {
-                    if app.is_searching() {
-                        app.cancel_search();
-                    } else {
-                        return Ok(());
-                    }
-                }
+                KeyCode::Esc => return Ok(()),
                 KeyCode::Tab => app.toggle_focus(),
                 KeyCode::Up | KeyCode::Char('k') => {
                     if app.nav_focused {
@@ -100,32 +131,58 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                         app.start_search();
                     }
                 }
-                KeyCode::Char('s') => {
-                    if !app.is_searching() {
-                        app.sync()?;
-                    } else {
-                        app.search_input('s');
-                    }
-                }
-                KeyCode::Char('r') => {
-                    if !app.is_searching() {
-                        app.load_data()?;
-                    } else {
-                        app.search_input('r');
-                    }
-                }
-                KeyCode::Char(c) => {
-                    if app.is_searching() {
-                        app.search_input(c);
-                    }
-                }
-                KeyCode::Backspace => {
-                    if app.is_searching() {
-                        app.search_backspace();
-                    }
+                // View-specific keys (only when not in nav)
+                _ if !app.nav_focused => {
+                    handle_view_keys(app, key.code)?;
                 }
                 _ => {}
             }
         }
     }
+}
+
+fn handle_view_keys(app: &mut App, key: KeyCode) -> Result<()> {
+    match app.current_view {
+        View::Accounts => match key {
+            KeyCode::Char('a') => app.show_add_account_dialog(),
+            KeyCode::Char('d') => app.show_remove_account_dialog(),
+            KeyCode::Char('r') => app.show_rename_account_dialog(),
+            KeyCode::Char('t') => app.show_set_type_dialog(),
+            _ => {}
+        },
+        View::Transactions => match key {
+            KeyCode::Char('f') => app.show_filter_account_dialog(),
+            KeyCode::Char('c') => app.clear_filters()?,
+            _ => {}
+        },
+        View::Holdings => {
+            // Holdings-specific keys can be added here
+        }
+        View::Assets => match key {
+            // TODO: implement asset actions
+            KeyCode::Char('a') => {
+                app.status = Some("Asset add not yet implemented in TUI".to_string());
+            }
+            KeyCode::Char('d') => {
+                app.status = Some("Asset delete not yet implemented in TUI".to_string());
+            }
+            KeyCode::Char('e') => {
+                app.status = Some("Asset edit not yet implemented in TUI".to_string());
+            }
+            _ => {}
+        },
+        View::Rules => match key {
+            KeyCode::Char('i') => {
+                crate::commands::import_rules::run()?;
+                app.load_data()?;
+                app.status = Some("Rules imported".to_string());
+            }
+            KeyCode::Char('p') => {
+                crate::commands::categorize::run_auto()?;
+                app.status = Some("Rules applied to transactions".to_string());
+            }
+            _ => {}
+        },
+    }
+    Ok(())
 }
