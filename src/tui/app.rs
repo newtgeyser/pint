@@ -211,14 +211,27 @@ impl App {
     }
 
     fn load_holdings(&mut self) -> Result<()> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, symbol, description, shares, price, cost_basis, market_value, currency, created_at, updated_at
-             FROM holdings
-             ORDER BY market_value DESC NULLS LAST"
-        )?;
+        let (query, params): (String, Vec<String>) = if let Some(ref account_filter) = self.filter_account {
+            (
+                "SELECT h.id, h.account_id, h.symbol, h.description, h.shares, h.price, h.cost_basis, h.market_value, h.currency, h.created_at, h.updated_at
+                 FROM holdings h
+                 JOIN accounts a ON h.account_id = a.id
+                 WHERE a.id LIKE '%' || ?1 || '%' OR a.nickname LIKE '%' || ?1 || '%' OR a.name LIKE '%' || ?1 || '%'
+                 ORDER BY h.market_value DESC NULLS LAST".to_string(),
+                vec![account_filter.clone()]
+            )
+        } else {
+            (
+                "SELECT id, account_id, symbol, description, shares, price, cost_basis, market_value, currency, created_at, updated_at
+                 FROM holdings
+                 ORDER BY market_value DESC NULLS LAST".to_string(),
+                vec![]
+            )
+        };
 
+        let mut stmt = self.conn.prepare(&query)?;
         self.holdings = stmt
-            .query_map([], |row| Holding::from_row(row))?
+            .query_map(rusqlite::params_from_iter(params.iter()), |row| Holding::from_row(row))?
             .collect::<Result<Vec<_>, _>>()?;
 
         if !self.holdings.is_empty() {
@@ -367,14 +380,22 @@ impl App {
     pub fn select_item(&mut self) -> Result<()> {
         match self.current_view {
             View::Accounts => {
-                // Drill down to transactions for selected account
                 let selected = self.accounts_state.selected().unwrap_or(0);
                 if let Some(account) = self.accounts.get(selected) {
                     self.filter_account = Some(account.id.clone());
-                    self.current_view = View::Transactions;
-                    self.nav_index = 1; // Transactions
-                    self.transactions_state.select(Some(0));
-                    self.load_transactions()?;
+
+                    // Brokerage/retirement accounts show holdings, others show transactions
+                    if account.account_type == "brokerage" || account.account_type == "retirement" {
+                        self.current_view = View::Holdings;
+                        self.nav_index = 2; // Holdings
+                        self.holdings_state.select(Some(0));
+                        self.load_holdings()?;
+                    } else {
+                        self.current_view = View::Transactions;
+                        self.nav_index = 1; // Transactions
+                        self.transactions_state.select(Some(0));
+                        self.load_transactions()?;
+                    }
                 }
             }
             _ => {}

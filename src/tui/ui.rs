@@ -224,8 +224,17 @@ fn draw_transactions(frame: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn draw_holdings(frame: &mut Frame, app: &mut App, area: Rect) {
+    let filter_info = if let Some(ref acc) = app.filter_account {
+        format!(" [Account: {}] ", truncate(acc, 20))
+    } else {
+        String::new()
+    };
+
     if app.holdings.is_empty() {
-        let msg = Paragraph::new("No holdings found. Run 'pint sync' or add holdings manually.");
+        let msg = Paragraph::new(format!(
+            "No holdings found.{}",
+            if filter_info.is_empty() { "" } else { &filter_info }
+        ));
         frame.render_widget(msg, area);
         return;
     }
