@@ -149,6 +149,11 @@ fn draw_accounts(frame: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
+    // Fixed columns: TYPE(14) + BALANCE(12) + CUR(4) = 30
+    // ACCOUNT gets the remaining space
+    let fixed_width: u16 = 14 + 12 + 4;
+    let account_width = area.width.saturating_sub(fixed_width + 3) as usize; // +3 for column spacing
+
     let header = Row::new(vec!["TYPE", "ACCOUNT", "BALANCE", "CUR"])
         .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         .bottom_margin(1);
@@ -170,7 +175,7 @@ fn draw_accounts(frame: &mut Frame, app: &mut App, area: Rect) {
 
             Row::new(vec![
                 truncate(&type_str, 12).to_string(),
-                truncate(account.display_name(), 24).to_string(),
+                truncate(account.display_name(), account_width.saturating_sub(2)).to_string(),
                 format!("{:>12}", balance_str),
                 account.currency.clone(),
             ])
@@ -181,7 +186,7 @@ fn draw_accounts(frame: &mut Frame, app: &mut App, area: Rect) {
         rows,
         [
             Constraint::Length(14),
-            Constraint::Length(26),
+            Constraint::Min(10),
             Constraint::Length(12),
             Constraint::Length(4),
         ],
@@ -212,6 +217,11 @@ fn draw_transactions(frame: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
+    // Fixed columns: DATE(12) + AMOUNT(12) + CATEGORY(18) = 42
+    // DESCRIPTION gets the remaining space
+    let fixed_width: u16 = 12 + 12 + 18;
+    let desc_width = area.width.saturating_sub(fixed_width + 3) as usize; // +3 for column spacing
+
     let header = Row::new(vec!["DATE", "AMOUNT", "CATEGORY", "DESCRIPTION"])
         .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         .bottom_margin(1);
@@ -239,7 +249,7 @@ fn draw_transactions(frame: &mut Frame, app: &mut App, area: Rect) {
                 Span::raw(tx.date.clone()),
                 Span::styled(amount_str, amount_style),
                 Span::raw(truncate(cat_str, 16).to_string()),
-                Span::raw(truncate(&desc, 40).to_string()),
+                Span::raw(truncate(&desc, desc_width.saturating_sub(2)).to_string()),
             ])
         })
         .collect();
@@ -250,7 +260,7 @@ fn draw_transactions(frame: &mut Frame, app: &mut App, area: Rect) {
             Constraint::Length(12),
             Constraint::Length(12),
             Constraint::Length(18),
-            Constraint::Min(20),
+            Constraint::Min(10),
         ],
     )
     .header(header)
@@ -275,6 +285,11 @@ fn draw_holdings(frame: &mut Frame, app: &mut App, area: Rect) {
         frame.render_widget(msg, area);
         return;
     }
+
+    // Fixed columns: SYMBOL(10) + SHARES(12) + PRICE(10) + VALUE(12) + GAIN(10) = 54
+    // DESCRIPTION gets the remaining space
+    let fixed_width: u16 = 10 + 12 + 10 + 12 + 10;
+    let desc_width = area.width.saturating_sub(fixed_width + 5) as usize; // +5 for column spacing
 
     let header = Row::new(vec!["SYMBOL", "DESCRIPTION", "SHARES", "PRICE", "VALUE", "GAIN"])
         .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
@@ -305,7 +320,7 @@ fn draw_holdings(frame: &mut Frame, app: &mut App, area: Rect) {
 
             Row::new(vec![
                 truncate(symbol, 8).to_string(),
-                truncate(desc, 20).to_string(),
+                truncate(desc, desc_width.saturating_sub(2)).to_string(),
                 format!("{:>12}", truncate(&h.shares, 12)),
                 format!("{:>10}", price_str),
                 format!("{:>12}", value_str),
@@ -318,7 +333,7 @@ fn draw_holdings(frame: &mut Frame, app: &mut App, area: Rect) {
         rows,
         [
             Constraint::Length(10),
-            Constraint::Length(22),
+            Constraint::Min(10),
             Constraint::Length(12),
             Constraint::Length(10),
             Constraint::Length(12),
@@ -338,6 +353,11 @@ fn draw_assets(frame: &mut Frame, app: &mut App, area: Rect) {
         frame.render_widget(msg, area);
         return;
     }
+
+    // Fixed columns: ID(4) + TYPE(14) + VALUE(12) + COST(12) + GAIN(10) = 52
+    // NAME gets the remaining space
+    let fixed_width: u16 = 4 + 14 + 12 + 12 + 10;
+    let name_width = area.width.saturating_sub(fixed_width + 5) as usize; // +5 for column spacing
 
     let header = Row::new(vec!["ID", "TYPE", "NAME", "VALUE", "COST", "GAIN"])
         .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
@@ -366,7 +386,7 @@ fn draw_assets(frame: &mut Frame, app: &mut App, area: Rect) {
             Row::new(vec![
                 a.id.to_string(),
                 truncate(&a.asset_type, 12).to_string(),
-                truncate(&a.name, 24).to_string(),
+                truncate(&a.name, name_width.saturating_sub(2)).to_string(),
                 format!("{:>12}", value_str),
                 format!("{:>12}", cost_str),
                 format!("{:>10}", gain_str),
@@ -379,7 +399,7 @@ fn draw_assets(frame: &mut Frame, app: &mut App, area: Rect) {
         [
             Constraint::Length(4),
             Constraint::Length(14),
-            Constraint::Length(26),
+            Constraint::Min(10),
             Constraint::Length(12),
             Constraint::Length(12),
             Constraint::Length(10),
@@ -420,6 +440,11 @@ fn draw_rules(frame: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
+    // Fixed columns: MATCH(12) + CATEGORY(22) = 34
+    // PATTERN gets the remaining space
+    let fixed_width: u16 = 12 + 22;
+    let pattern_width = chunks[1].width.saturating_sub(fixed_width + 2) as usize; // +2 for column spacing
+
     let header = Row::new(vec!["PATTERN", "MATCH", "CATEGORY"])
         .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         .bottom_margin(1);
@@ -429,7 +454,7 @@ fn draw_rules(frame: &mut Frame, app: &mut App, area: Rect) {
         .iter()
         .map(|r| {
             Row::new(vec![
-                truncate(&r.pattern, 30).to_string(),
+                truncate(&r.pattern, pattern_width.saturating_sub(2)).to_string(),
                 truncate(&r.match_mode, 10).to_string(),
                 truncate(&r.category, 20).to_string(),
             ])
@@ -439,7 +464,7 @@ fn draw_rules(frame: &mut Frame, app: &mut App, area: Rect) {
     let table = Table::new(
         rows,
         [
-            Constraint::Length(32),
+            Constraint::Min(10),
             Constraint::Length(12),
             Constraint::Length(22),
         ],
