@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use super::app::{App, View};
+use super::app::{format_amount, App, View};
 use crate::util::truncate;
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
@@ -25,7 +25,28 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 }
 
 fn draw_title(frame: &mut Frame, app: &App, area: Rect) {
-    let title = format!(" PINT - {} ", app.current_view.name());
+    let detail = match app.current_view {
+        View::Accounts => {
+            let total = app.accounts_total();
+            format!("  Total: ${}", format_amount(total, "USD"))
+        }
+        View::Transactions => {
+            format!("  {} transactions", app.transactions.len())
+        }
+        View::Holdings => {
+            let total = app.holdings_total();
+            format!("  {} holdings  Total: ${}", app.holdings.len(), format_amount(total, "USD"))
+        }
+        View::Assets => {
+            let total = app.assets_total();
+            format!("  Total: ${}", format_amount(total, "USD"))
+        }
+        View::Rules => {
+            format!("  {} rules", app.rules.len())
+        }
+    };
+
+    let title = format!(" PINT - {}{} ", app.current_view.name(), detail);
     let title_block = Block::default()
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::Cyan));
@@ -128,8 +149,8 @@ fn draw_accounts(frame: &mut Frame, app: &mut App, area: Rect) {
             };
 
             let balance_str = account
-                .balance_dollars()
-                .map(|b| format!("{:.2}", b))
+                .balance
+                .map(|b| format_amount(b, &account.currency))
                 .unwrap_or_else(|| "N/A".to_string());
 
             Row::new(vec![
@@ -184,7 +205,8 @@ fn draw_transactions(frame: &mut Frame, app: &mut App, area: Rect) {
         .transactions
         .iter()
         .map(|tx| {
-            let amount_str = format!("{:>10.2}", tx.amount);
+            let amount_cents = (tx.amount * 100.0) as i64;
+            let amount_str = format!("{:>12}", format_amount(amount_cents, "USD"));
             let amount_style = if tx.amount < 0.0 {
                 Style::default().fg(Color::Red)
             } else {
@@ -250,12 +272,12 @@ fn draw_holdings(frame: &mut Frame, app: &mut App, area: Rect) {
             let symbol = h.symbol.as_deref().unwrap_or("-");
             let desc = h.description.as_deref().unwrap_or("-");
 
-            let price_str = h.price_dollars()
-                .map(|p| format!("{:.2}", p))
+            let price_str = h.price
+                .map(|p| format_amount(p, &h.currency))
                 .unwrap_or_else(|| "N/A".to_string());
 
-            let value_str = h.market_value_dollars()
-                .map(|v| format!("{:.2}", v))
+            let value_str = h.market_value
+                .map(|v| format_amount(v, &h.currency))
                 .unwrap_or_else(|| "N/A".to_string());
 
             let gain_str = match (h.cost_basis, h.market_value) {
@@ -310,12 +332,12 @@ fn draw_assets(frame: &mut Frame, app: &mut App, area: Rect) {
         .assets
         .iter()
         .map(|a| {
-            let value_str = a.value_dollars()
-                .map(|v| format!("{:.2}", v))
+            let value_str = a.value
+                .map(|v| format_amount(v, &a.currency))
                 .unwrap_or_else(|| "N/A".to_string());
 
-            let cost_str = a.cost_basis_dollars()
-                .map(|c| format!("{:.2}", c))
+            let cost_str = a.cost_basis
+                .map(|c| format_amount(c, &a.currency))
                 .unwrap_or_else(|| "N/A".to_string());
 
             let gain_str = match (a.cost_basis, a.value) {

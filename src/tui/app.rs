@@ -88,7 +88,7 @@ impl App {
             conn,
             current_view: View::Accounts,
             nav_index: 0,
-            nav_focused: true,
+            nav_focused: false,
 
             accounts: Vec::new(),
             transactions: Vec::new(),
@@ -435,4 +435,50 @@ impl App {
         Ok(())
     }
 
+    /// Calculate total balance of all accounts in cents
+    pub fn accounts_total(&self) -> i64 {
+        self.accounts.iter().filter_map(|a| a.balance).sum()
+    }
+
+    /// Calculate total value of all assets in cents
+    pub fn assets_total(&self) -> i64 {
+        self.assets.iter().filter_map(|a| a.value).sum()
+    }
+
+    /// Calculate total market value of displayed holdings in cents
+    pub fn holdings_total(&self) -> i64 {
+        self.holdings.iter().filter_map(|h| h.market_value).sum()
+    }
+}
+
+/// Format an amount in cents with thousand separators based on currency
+pub fn format_amount(cents: i64, currency: &str) -> String {
+    let dollars = cents as f64 / 100.0;
+    let formatted = format!("{:.2}", dollars.abs());
+
+    // Split into integer and decimal parts
+    let parts: Vec<&str> = formatted.split('.').collect();
+    let int_part = parts[0];
+    let dec_part = parts.get(1).unwrap_or(&"00");
+
+    // Add thousand separators
+    let separator = if currency == "EUR" { ' ' } else { ',' };
+    let with_separators: String = int_part
+        .chars()
+        .rev()
+        .enumerate()
+        .flat_map(|(i, c)| {
+            if i > 0 && i % 3 == 0 {
+                vec![separator, c]
+            } else {
+                vec![c]
+            }
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+
+    let sign = if cents < 0 { "-" } else { "" };
+    format!("{}{}.{}", sign, with_separators, dec_part)
 }
