@@ -26,31 +26,42 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 
 fn draw_title(frame: &mut Frame, app: &App, area: Rect) {
     let account_filter = app.filter_account.as_ref()
-        .map(|acc| format!(" [{}]", truncate(acc, 20)))
+        .map(|acc| format!("[{}]", truncate(acc, 20)))
         .unwrap_or_default();
 
-    let detail = match app.current_view {
+    let left_part = format!(" PINT - {}{}", app.current_view.name(),
+        if account_filter.is_empty() { String::new() } else { format!(" {}", account_filter) });
+
+    let right_part = match app.current_view {
         View::Accounts => {
             let total = app.accounts_total();
-            format!("  Total: ${}", format_amount(total, "USD"))
+            format!("Total: ${} ", format_amount(total, "USD"))
         }
         View::Transactions => {
-            format!("{}  {} transactions", account_filter, app.transactions.len())
+            format!("{} transactions ", app.transactions.len())
         }
         View::Holdings => {
             let total = app.holdings_total();
-            format!("{}  {} holdings  Total: ${}", account_filter, app.holdings.len(), format_amount(total, "USD"))
+            format!("{} holdings  Total: ${} ", app.holdings.len(), format_amount(total, "USD"))
         }
         View::Assets => {
             let total = app.assets_total();
-            format!("  Total: ${}", format_amount(total, "USD"))
+            format!("Total: ${} ", format_amount(total, "USD"))
         }
         View::Rules => {
-            format!("  {} rules", app.rules.len())
+            format!("{} rules ", app.rules.len())
         }
     };
 
-    let title = format!(" PINT - {}{} ", app.current_view.name(), detail);
+    // Calculate padding to right-justify the right part
+    // area.width includes borders (2 chars)
+    let available_width = area.width.saturating_sub(2) as usize;
+    let left_len = left_part.chars().count();
+    let right_len = right_part.chars().count();
+    let padding = available_width.saturating_sub(left_len + right_len);
+
+    let title = format!("{}{:padding$}{}", left_part, "", right_part, padding = padding);
+
     let title_block = Block::default()
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::Cyan));
