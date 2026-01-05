@@ -415,6 +415,7 @@ impl App {
     pub fn cancel_search(&mut self) {
         self.search_mode = false;
         self.search_query.clear();
+        let _ = self.load_data();
     }
 
     pub fn search_input(&mut self, c: char) {
