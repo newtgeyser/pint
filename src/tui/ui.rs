@@ -548,8 +548,10 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
 
     let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
 
-    // Clear the area behind the dialog
+    // Clear the area behind the dialog and fill with background
     frame.render_widget(Clear, dialog_area);
+    let bg_block = Block::default().style(Style::default().bg(Color::Black));
+    frame.render_widget(bg_block, dialog_area);
 
     // Draw dialog content based on type
     match &dialog.dialog_type {
@@ -557,7 +559,7 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             let block = Block::default()
                 .title(format!(" {} ", title))
                 .borders(Borders::ALL)
-                .style(Style::default().fg(Color::Yellow));
+                .style(Style::default().fg(Color::Yellow).bg(Color::Black));
 
             let inner = block.inner(dialog_area);
             frame.render_widget(block, dialog_area);
@@ -580,7 +582,7 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             let block = Block::default()
                 .title(format!(" {} ", title))
                 .borders(Borders::ALL)
-                .style(Style::default().fg(Color::Cyan));
+                .style(Style::default().fg(Color::Cyan).bg(Color::Black));
 
             let inner = block.inner(dialog_area);
             frame.render_widget(block, dialog_area);
@@ -602,7 +604,7 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             let block = Block::default()
                 .title(format!(" {} ", title))
                 .borders(Borders::ALL)
-                .style(Style::default().fg(Color::Cyan));
+                .style(Style::default().fg(Color::Cyan).bg(Color::Black));
 
             let inner = block.inner(dialog_area);
             frame.render_widget(block, dialog_area);
