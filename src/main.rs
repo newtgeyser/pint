@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 
 use pint::commands::{self, transactions::Filters};
 use pint::config;
+use pint::tui;
 
 #[derive(Parser)]
 #[command(name = "pint")]
@@ -22,6 +23,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Launch interactive terminal UI
+    Tui,
+
     /// Initialize database and configure SimpleFIN access
     Setup,
 
@@ -277,6 +281,8 @@ fn main() -> Result<()> {
     }
 
     match cli.command {
+        Commands::Tui => tui::run(),
+
         Commands::Setup => commands::setup::run(),
 
         Commands::Sync { days, backfill, from } => {
