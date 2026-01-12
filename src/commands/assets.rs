@@ -28,15 +28,7 @@ pub fn validate_asset_type(t: &str) -> Result<&'static str> {
 pub fn run() -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
 
-    let mut stmt = conn.prepare(
-        "SELECT id, name, asset_type, description, value, cost_basis, currency, acquired_date, metadata, created_at, updated_at
-         FROM assets
-         ORDER BY value DESC NULLS LAST",
-    )?;
-
-    let assets: Vec<Asset> = stmt
-        .query_map([], Asset::from_row)?
-        .collect::<Result<Vec<_>, _>>()?;
+    let assets = Asset::find_all(&conn)?;
 
     if assets.is_empty() {
         println!("No assets found. Use 'pint assets add' to add an asset.");

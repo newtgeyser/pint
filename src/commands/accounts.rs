@@ -19,15 +19,7 @@ pub const VALID_TYPES: &[&str] = &[
 pub fn run() -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
 
-    let mut stmt = conn.prepare(
-        "SELECT id, name, nickname, institution, account_type, balance, balance_date, currency, manual, created_at, updated_at
-         FROM accounts
-         ORDER BY manual DESC, account_type, COALESCE(nickname, name)",
-    )?;
-
-    let accounts: Vec<Account> = stmt
-        .query_map([], Account::from_row)?
-        .collect::<Result<Vec<_>, _>>()?;
+    let accounts = Account::find_all(&conn)?;
 
     if accounts.is_empty() {
         println!("No accounts found. Run 'pint sync' to fetch accounts or 'pint accounts add' to create one.");

@@ -99,27 +99,10 @@ pub fn run(account_filter: Option<&str>, sort: &str) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
     let sort_by = parse_sort_column(sort)?;
 
-    let (query, params): (&str, Vec<Box<dyn rusqlite::ToSql>>) = match account_filter {
-        Some(filter) => (
-            "SELECT h.id, h.account_id, h.symbol, h.description, h.shares, h.price, h.cost_basis, h.market_value, h.currency, h.created_at, h.updated_at
-             FROM holdings h
-             JOIN accounts a ON h.account_id = a.id
-             WHERE a.id = ?1 OR a.id LIKE ?1 || '%' OR a.nickname LIKE '%' || ?1 || '%' OR a.name LIKE '%' || ?1 || '%'",
-            vec![Box::new(filter.to_string())],
-        ),
-        None => (
-            "SELECT id, account_id, symbol, description, shares, price, cost_basis, market_value, currency, created_at, updated_at
-             FROM holdings",
-            vec![],
-        ),
+    let mut holdings = match account_filter {
+        Some(filter) => Holding::find_by_account_filter(&conn, filter)?,
+        None => Holding::find_all(&conn)?,
     };
-
-    let mut stmt = conn.prepare(query)?;
-    let mut holdings: Vec<Holding> = stmt
-        .query_map(rusqlite::params_from_iter(params.iter()), |row| {
-            Holding::from_row(row)
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
 
     holdings.sort_by(|a, b| compare_holdings(a, b, sort_by));
 
