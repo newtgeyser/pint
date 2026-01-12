@@ -130,12 +130,12 @@ fn parse_dollar_amount(s: &str) -> Option<i64> {
     }
 
     // Handle negative values like "-$543.15"
-    let (sign, rest) = if s.starts_with("-$") {
-        (-1i64, &s[2..])
-    } else if s.starts_with('-') {
-        (-1i64, &s[1..])
-    } else if s.starts_with('$') {
-        (1i64, &s[1..])
+    let (sign, rest) = if let Some(stripped) = s.strip_prefix("-$") {
+        (-1i64, stripped)
+    } else if let Some(stripped) = s.strip_prefix('-') {
+        (-1i64, stripped)
+    } else if let Some(stripped) = s.strip_prefix('$') {
+        (1i64, stripped)
     } else {
         (1i64, s)
     };

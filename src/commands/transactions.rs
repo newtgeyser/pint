@@ -101,8 +101,8 @@ pub fn run(filters: Filters) -> Result<()> {
     }
 
     println!(
-        "{:<12} {:>10}  {:<16} {}",
-        "DATE", "AMOUNT", "CATEGORY", "DESCRIPTION"
+        "{:<12} {:>10}  {:<16} DESCRIPTION",
+        "DATE", "AMOUNT", "CATEGORY"
     );
     println!("{}", "-".repeat(85));
 

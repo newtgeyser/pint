@@ -34,24 +34,24 @@ fn draw_title(frame: &mut Frame, app: &App, area: Rect) {
         .map(|acc| format!("[{}]", truncate(acc, 20)))
         .unwrap_or_default();
 
-    let left_part = format!(" PINT - {}{}", app.current_view.name(),
+    let left_part = format!(" 🍺 PINT - {}{}", app.current_view.name(),
         if account_filter.is_empty() { String::new() } else { format!(" {}", account_filter) });
 
     let right_part = match app.current_view {
         View::Accounts => {
             let total = app.accounts_total();
-            format!("Total: ${} ", format_amount(total, "USD"))
+            format!("💰 Total: ${} ", format_amount(total, "USD"))
         }
         View::Transactions => {
             format!("{} transactions ", app.transactions.len())
         }
         View::Holdings => {
             let total = app.holdings_total();
-            format!("{} holdings  Total: ${} ", app.holdings.len(), format_amount(total, "USD"))
+            format!("{} holdings  💰 Total: ${} ", app.holdings.len(), format_amount(total, "USD"))
         }
         View::Assets => {
             let total = app.assets_total();
-            format!("Total: ${} ", format_amount(total, "USD"))
+            format!("💰 Total: ${} ", format_amount(total, "USD"))
         }
         View::Rules => {
             format!("{} rules ", app.rules.len())
@@ -82,7 +82,7 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(16),  // Navigation
+            Constraint::Length(20),  // Navigation (wider for emojis)
             Constraint::Min(0),      // Main content
         ])
         .split(area);
@@ -92,7 +92,9 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn draw_navigation(frame: &mut Frame, app: &App, area: Rect) {
-    let items: Vec<ListItem> = View::ALL
+    let mut items: Vec<ListItem> = vec![ListItem::new("")]; // Empty line for spacing
+
+    items.extend(View::ALL
         .iter()
         .enumerate()
         .map(|(i, view)| {
@@ -107,9 +109,8 @@ fn draw_navigation(frame: &mut Frame, app: &App, area: Rect) {
             };
 
             let prefix = if i == app.nav_index { "▸ " } else { "  " };
-            ListItem::new(format!("{}{}", prefix, view.name())).style(style)
-        })
-        .collect();
+            ListItem::new(format!("{}{}", prefix, view.label())).style(style)
+        }));
 
     let nav_block = Block::default()
         .borders(Borders::ALL)
@@ -503,11 +504,11 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             }
             View::Transactions => {
                 let filter_status = if app.filter_account.is_some() || !app.search_query.is_empty() {
-                    "  c:Clear filters"
+                    "  c:Clear"
                 } else {
                     ""
                 };
-                format!("/:Search  f:Filter account{}  q:Quit", filter_status)
+                format!("e:Edit category  l:Learn rule  /:Search  f:Filter{}  q:Quit", filter_status)
             }
             View::Holdings => {
                 "Enter:View details  q:Quit".to_string()
@@ -541,6 +542,12 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
         DialogType::Confirm { .. } => 7,
         DialogType::Input { .. } => 7,
         DialogType::TwoInputs { .. } => 10,
+        DialogType::Select { items, .. } => {
+            // Height based on number of items, with min/max bounds
+            let item_count = items.len() as u16;
+            (item_count + 2).clamp(5, area.height.saturating_sub(6))
+        }
+        DialogType::RuleEditor { .. } => 18, // Fixed height for rule editor
     };
 
     let dialog_x = (area.width.saturating_sub(dialog_width)) / 2;
@@ -587,13 +594,18 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             let inner = block.inner(dialog_area);
             frame.render_widget(block, dialog_area);
 
+            // Split input at cursor position
+            let (before, after) = dialog.input1.split_at(dialog.cursor1.min(dialog.input1.len()));
+            let input_style = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
+
             let text = vec![
                 Line::from(Span::raw(prompt.clone())),
                 Line::from(""),
-                Line::from(Span::styled(
-                    format!("{}█", dialog.input1),
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-                )),
+                Line::from(vec![
+                    Span::styled(before.to_string(), input_style),
+                    Span::styled("█", input_style),
+                    Span::styled(after.to_string(), input_style),
+                ]),
             ];
 
             let paragraph = Paragraph::new(text);
@@ -621,20 +633,132 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
                 Style::default().fg(Color::Gray)
             };
 
-            let cursor1 = if *focused == 0 { "█" } else { "" };
-            let cursor2 = if *focused == 1 { "█" } else { "" };
+            // Build input1 line with cursor
+            let input1_line = if *focused == 0 {
+                let (before, after) = dialog.input1.split_at(dialog.cursor1.min(dialog.input1.len()));
+                Line::from(vec![
+                    Span::styled(before.to_string(), input1_style),
+                    Span::styled("█", input1_style),
+                    Span::styled(after.to_string(), input1_style),
+                ])
+            } else {
+                Line::from(Span::styled(dialog.input1.clone(), input1_style))
+            };
+
+            // Build input2 line with cursor
+            let input2_line = if *focused == 1 {
+                let (before, after) = dialog.input2.split_at(dialog.cursor2.min(dialog.input2.len()));
+                Line::from(vec![
+                    Span::styled(before.to_string(), input2_style),
+                    Span::styled("█", input2_style),
+                    Span::styled(after.to_string(), input2_style),
+                ])
+            } else {
+                Line::from(Span::styled(dialog.input2.clone(), input2_style))
+            };
 
             let text = vec![
                 Line::from(Span::raw(prompt1.clone())),
-                Line::from(Span::styled(format!("{}{}", dialog.input1, cursor1), input1_style)),
+                input1_line,
                 Line::from(""),
                 Line::from(Span::raw(prompt2.clone())),
-                Line::from(Span::styled(format!("{}{}", dialog.input2, cursor2), input2_style)),
+                input2_line,
                 Line::from(""),
                 Line::from(Span::styled("Tab to switch fields", Style::default().fg(Color::DarkGray))),
             ];
 
             let paragraph = Paragraph::new(text);
+            frame.render_widget(paragraph, inner);
+        }
+
+        DialogType::Select { title, items, selected } => {
+            let block = Block::default()
+                .title(format!(" {} ", title))
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Cyan).bg(Color::Black));
+
+            let inner = block.inner(dialog_area);
+            frame.render_widget(block, dialog_area);
+
+            // Build list items
+            let list_items: Vec<ListItem> = items
+                .iter()
+                .enumerate()
+                .map(|(i, (_, display_name))| {
+                    let style = if i == *selected {
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    let prefix = if i == *selected { "▸ " } else { "  " };
+                    ListItem::new(format!("{}{}", prefix, truncate(display_name, 50))).style(style)
+                })
+                .collect();
+
+            let list = List::new(list_items);
+            frame.render_widget(list, inner);
+        }
+
+        DialogType::RuleEditor { title, focused_field, match_mode, categories, selected_category } => {
+            let block = Block::default()
+                .title(format!(" {} ", title))
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Cyan).bg(Color::Black));
+
+            let inner = block.inner(dialog_area);
+            frame.render_widget(block, dialog_area);
+
+            // Styles for focused/unfocused fields
+            let focused_style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+            let unfocused_style = Style::default().fg(Color::Gray);
+            let label_style = Style::default().fg(Color::White);
+
+            // Pattern field
+            let pattern_style = if *focused_field == 0 { focused_style } else { unfocused_style };
+            let (before, after) = dialog.input1.split_at(dialog.cursor1.min(dialog.input1.len()));
+            let pattern_line = if *focused_field == 0 {
+                Line::from(vec![
+                    Span::styled(before.to_string(), pattern_style),
+                    Span::styled("█", pattern_style),
+                    Span::styled(after.to_string(), pattern_style),
+                ])
+            } else {
+                Line::from(Span::styled(dialog.input1.clone(), pattern_style))
+            };
+
+            // Match mode field
+            let match_style = if *focused_field == 1 { focused_style } else { unfocused_style };
+            let substring_prefix = if *match_mode == 0 { "● " } else { "○ " };
+            let token_prefix = if *match_mode == 1 { "● " } else { "○ " };
+
+            // Category field - show a few categories around the selected one
+            let cat_style = if *focused_field == 2 { focused_style } else { unfocused_style };
+
+            // Build the dialog content
+            let mut lines = vec![
+                Line::from(Span::styled("Pattern:", label_style)),
+                pattern_line,
+                Line::from(""),
+                Line::from(Span::styled("Match mode:", label_style)),
+                Line::from(Span::styled(format!("{}Substring", substring_prefix), match_style)),
+                Line::from(Span::styled(format!("{}Token", token_prefix), match_style)),
+                Line::from(""),
+                Line::from(Span::styled("Category:", label_style)),
+            ];
+
+            // Show categories with selection indicator
+            let start = selected_category.saturating_sub(2);
+            let visible_cats: Vec<_> = categories.iter().enumerate().skip(start).take(5).collect();
+            for (i, (_, name)) in visible_cats {
+                let prefix = if i == *selected_category { "▸ " } else { "  " };
+                let style = if i == *selected_category { cat_style } else { unfocused_style };
+                lines.push(Line::from(Span::styled(format!("{}{}", prefix, truncate(name, 45)), style)));
+            }
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled("Tab:Next field  ↑↓:Select  Enter:Confirm", Style::default().fg(Color::DarkGray))));
+
+            let paragraph = Paragraph::new(lines);
             frame.render_widget(paragraph, inner);
         }
     }

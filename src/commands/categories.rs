@@ -12,7 +12,7 @@ pub fn run() -> Result<()> {
     )?;
 
     let categories: Vec<Category> = stmt
-        .query_map([], |row| Category::from_row(row))?
+        .query_map([], Category::from_row)?
         .collect::<Result<Vec<_>, _>>()?;
 
     if categories.is_empty() {
@@ -20,7 +20,7 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
 
-    println!("{:<6} {}", "ID", "CATEGORY");
+    println!("{:<6} CATEGORY", "ID");
     println!("{}", "-".repeat(40));
 
     for cat in categories {

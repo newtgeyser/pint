@@ -3,6 +3,10 @@ use anyhow::{bail, Context, Result};
 use crate::{db, rules};
 
 pub fn run_auto() -> Result<()> {
+    run_auto_quiet(false)
+}
+
+pub fn run_auto_quiet(quiet: bool) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
 
     // Make sure rules are loaded
@@ -14,10 +18,12 @@ pub fn run_auto() -> Result<()> {
 
     let categorized = rules::auto_categorize_all(&conn)?;
 
-    if categorized == 0 {
-        println!("No uncategorized transactions found (or no matching rules).");
-    } else {
-        println!("Categorized {} transactions.", categorized);
+    if !quiet {
+        if categorized == 0 {
+            println!("No uncategorized transactions found (or no matching rules).");
+        } else {
+            println!("Categorized {} transactions.", categorized);
+        }
     }
 
     Ok(())

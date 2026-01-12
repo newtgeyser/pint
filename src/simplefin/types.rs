@@ -88,10 +88,6 @@ impl Account {
 
         "unknown"
     }
-
-    pub fn has_holdings(&self) -> bool {
-        !self.holdings.is_empty()
-    }
 }
 
 fn normalize_account_type(t: &str) -> &'static str {

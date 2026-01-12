@@ -27,7 +27,7 @@ pub fn run() -> Result<()> {
     )?;
 
     let accounts: Vec<Account> = stmt
-        .query_map([], |row| Account::from_row(row))?
+        .query_map([], Account::from_row)?
         .collect::<Result<Vec<_>, _>>()?;
 
     if accounts.is_empty() {
@@ -35,7 +35,7 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
 
-    println!("{:<12} {:<14} {:<28} {:>12} {:>4}  {}", "ID", "TYPE", "ACCOUNT", "BALANCE", "CUR", "AS OF");
+    println!("{:<12} {:<14} {:<28} {:>12} {:>4}  AS OF", "ID", "TYPE", "ACCOUNT", "BALANCE", "CUR");
     println!("{}", "-".repeat(88));
 
     let mut total_balance = 0i64;
@@ -97,6 +97,10 @@ pub fn run() -> Result<()> {
 }
 
 pub fn add(name: &str, account_type: &str) -> Result<()> {
+    add_quiet(name, account_type, false)
+}
+
+pub fn add_quiet(name: &str, account_type: &str, quiet: bool) -> Result<()> {
     let account_type = account_type.to_lowercase();
     if !VALID_TYPES.contains(&account_type.as_str()) {
         bail!(
@@ -117,11 +121,17 @@ pub fn add(name: &str, account_type: &str) -> Result<()> {
         rusqlite::params![id, name, account_type, now],
     )?;
 
-    println!("Created manual account '{}' (ID: {})", name, truncate(&id, 12));
+    if !quiet {
+        println!("Created manual account '{}' (ID: {})", name, truncate(&id, 12));
+    }
     Ok(())
 }
 
 pub fn remove(account_query: &str) -> Result<()> {
+    remove_quiet(account_query, false)
+}
+
+pub fn remove_quiet(account_query: &str, quiet: bool) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
 
     // Find account by ID (exact or prefix), nickname, or name (partial match)
@@ -151,17 +161,19 @@ pub fn remove(account_query: &str) -> Result<()> {
 
             conn.execute("DELETE FROM accounts WHERE id = ?1", [&id])?;
 
-            let mut parts = vec![format!("Removed account '{}'", name)];
-            if txns_deleted > 0 {
-                parts.push(format!("{} transactions", txns_deleted));
-            }
-            if holdings_deleted > 0 {
-                parts.push(format!("{} holdings", holdings_deleted));
-            }
-            if parts.len() > 1 {
-                println!("{} and {}", parts[0], parts[1..].join(", "));
-            } else {
-                println!("{}", parts[0]);
+            if !quiet {
+                let mut parts = vec![format!("Removed account '{}'", name)];
+                if txns_deleted > 0 {
+                    parts.push(format!("{} transactions", txns_deleted));
+                }
+                if holdings_deleted > 0 {
+                    parts.push(format!("{} holdings", holdings_deleted));
+                }
+                if parts.len() > 1 {
+                    println!("{} and {}", parts[0], parts[1..].join(", "));
+                } else {
+                    println!("{}", parts[0]);
+                }
             }
             Ok(())
         }
@@ -171,6 +183,10 @@ pub fn remove(account_query: &str) -> Result<()> {
 
 
 pub fn set_type(account_query: &str, account_type: &str) -> Result<()> {
+    set_type_quiet(account_query, account_type, false)
+}
+
+pub fn set_type_quiet(account_query: &str, account_type: &str, quiet: bool) -> Result<()> {
     let account_type = account_type.to_lowercase();
     if !VALID_TYPES.contains(&account_type.as_str()) {
         bail!(
@@ -199,7 +215,9 @@ pub fn set_type(account_query: &str, account_type: &str) -> Result<()> {
                 "UPDATE accounts SET account_type = ?1, updated_at = ?2 WHERE id = ?3",
                 rusqlite::params![account_type, Utc::now().timestamp(), id],
             )?;
-            println!("Set account '{}' type to '{}'", name, account_type);
+            if !quiet {
+                println!("Set account '{}' type to '{}'", name, account_type);
+            }
             Ok(())
         }
         None => bail!("No account found matching '{}'", account_query),
@@ -207,6 +225,10 @@ pub fn set_type(account_query: &str, account_type: &str) -> Result<()> {
 }
 
 pub fn set_nickname(account_query: &str, nickname: Option<&str>) -> Result<()> {
+    set_nickname_quiet(account_query, nickname, false)
+}
+
+pub fn set_nickname_quiet(account_query: &str, nickname: Option<&str>, quiet: bool) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
 
     // Find account by ID (exact or prefix), nickname, or name (partial match)
@@ -226,9 +248,11 @@ pub fn set_nickname(account_query: &str, nickname: Option<&str>) -> Result<()> {
                 "UPDATE accounts SET nickname = ?1, updated_at = ?2 WHERE id = ?3",
                 rusqlite::params![nickname, Utc::now().timestamp(), id],
             )?;
-            match nickname {
-                Some(n) => println!("Set account '{}' nickname to '{}'", current_name, n),
-                None => println!("Cleared nickname for account '{}'", current_name),
+            if !quiet {
+                match nickname {
+                    Some(n) => println!("Set account '{}' nickname to '{}'", current_name, n),
+                    None => println!("Cleared nickname for account '{}'", current_name),
+                }
             }
             Ok(())
         }

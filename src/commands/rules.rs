@@ -21,7 +21,7 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
 
-    println!("{:<30} {:<10} {}", "PATTERN", "MATCH", "CATEGORY");
+    println!("{:<30} {:<10} CATEGORY", "PATTERN", "MATCH");
     println!("{}", "-".repeat(70));
 
     let count = rules.len();

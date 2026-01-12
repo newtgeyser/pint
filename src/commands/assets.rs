@@ -35,7 +35,7 @@ pub fn run() -> Result<()> {
     )?;
 
     let assets: Vec<Asset> = stmt
-        .query_map([], |row| Asset::from_row(row))?
+        .query_map([], Asset::from_row)?
         .collect::<Result<Vec<_>, _>>()?;
 
     if assets.is_empty() {

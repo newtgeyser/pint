@@ -128,10 +128,6 @@ pub fn get_or_create_category(conn: &Connection, name: &str) -> Result<i64> {
     Ok(conn.last_insert_rowid())
 }
 
-pub fn upsert_merchant_rule(conn: &Connection, pattern: &str, category_id: i64) -> Result<()> {
-    upsert_merchant_rule_with_mode(conn, pattern, category_id, MatchMode::Substring)
-}
-
 pub fn upsert_merchant_rule_with_mode(
     conn: &Connection,
     pattern: &str,
@@ -208,14 +204,6 @@ pub fn find_category_for_description_with_rules(
     None
 }
 
-pub fn find_category_for_description(conn: &Connection, description: &str) -> Result<Option<i64>> {
-    let rules = list_merchant_rules(conn)?;
-    Ok(find_category_for_description_with_rules(
-        description,
-        rules.as_slice(),
-    ))
-}
-
 fn merchant_rule_matches(description_upper: &str, pattern_upper: &str, match_mode: MatchMode) -> bool {
     match match_mode {
         MatchMode::Substring => description_upper.contains(pattern_upper),
@@ -229,8 +217,8 @@ fn is_token_boundary_match(haystack: &str, start: usize, pat_len: usize) -> bool
     let before = haystack[..start].chars().last();
     let after = haystack[start + pat_len..].chars().next();
 
-    let ok_before = before.map_or(true, |c| !c.is_ascii_alphanumeric());
-    let ok_after = after.map_or(true, |c| !c.is_ascii_alphanumeric());
+    let ok_before = before.is_none_or(|c| !c.is_ascii_alphanumeric());
+    let ok_after = after.is_none_or(|c| !c.is_ascii_alphanumeric());
     ok_before && ok_after
 }
 
