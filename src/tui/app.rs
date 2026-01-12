@@ -2,7 +2,7 @@ use anyhow::Result;
 use ratatui::widgets::TableState;
 use rusqlite::Connection;
 
-use crate::db::models::{Account, Asset, Category, Holding};
+use crate::db::models::{Account, Asset, Category, Holding, MerchantRule, RuleRow, Transaction, TransactionRow};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -149,24 +149,6 @@ pub struct App {
     pub has_interacted: bool,
 }
 
-#[derive(Clone)]
-#[allow(dead_code)]
-pub struct TransactionRow {
-    pub id: String,
-    pub date: String,
-    pub amount: f64,
-    pub description: String,
-    pub category: Option<String>,
-    pub account_name: String,
-    pub pending: bool,
-}
-
-#[derive(Clone)]
-pub struct RuleRow {
-    pub pattern: String,
-    pub match_mode: String,
-    pub category: String,
-}
 
 impl App {
     pub fn new(conn: Connection) -> Self {
@@ -212,15 +194,7 @@ impl App {
     }
 
     fn load_accounts(&mut self) -> Result<()> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, nickname, institution, account_type, balance, balance_date, currency, manual, created_at, updated_at
-             FROM accounts
-             ORDER BY manual DESC, account_type, COALESCE(nickname, name)"
-        )?;
-
-        self.accounts = stmt
-            .query_map([], Account::from_row)?
-            .collect::<Result<Vec<_>, _>>()?;
+        self.accounts = Account::find_all(&self.conn)?;
 
         if !self.accounts.is_empty() {
             let selected = self.accounts_state.selected().unwrap_or(0);
@@ -232,56 +206,9 @@ impl App {
     }
 
     fn load_transactions(&mut self) -> Result<()> {
-        use chrono::{TimeZone, Utc};
+        self.transactions = TransactionRow::find_all(&self.conn, self.filter_account.as_deref(), 2000)?;
 
-        let (query, params): (String, Vec<String>) = if let Some(ref account_filter) = self.filter_account {
-            (
-                "SELECT t.id, t.posted, t.amount, t.description, t.pending, c.name as category,
-                        COALESCE(a.nickname, a.name) as account_name
-                 FROM transactions t
-                 LEFT JOIN categories c ON t.category_id = c.id
-                 JOIN accounts a ON t.account_id = a.id
-                 WHERE a.id LIKE '%' || ?1 || '%' OR a.nickname LIKE '%' || ?1 || '%' OR a.name LIKE '%' || ?1 || '%'
-                 ORDER BY t.posted DESC
-                 LIMIT 2000".to_string(),
-                vec![account_filter.clone()]
-            )
-        } else {
-            (
-                "SELECT t.id, t.posted, t.amount, t.description, t.pending, c.name as category,
-                        COALESCE(a.nickname, a.name) as account_name
-                 FROM transactions t
-                 LEFT JOIN categories c ON t.category_id = c.id
-                 JOIN accounts a ON t.account_id = a.id
-                 ORDER BY t.posted DESC
-                 LIMIT 2000".to_string(),
-                vec![]
-            )
-        };
-
-        let mut stmt = self.conn.prepare(&query)?;
-
-        let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
-            let posted: i64 = row.get(1)?;
-            let date = Utc.timestamp_opt(posted, 0)
-                .single()
-                .map(|dt| dt.format("%Y-%m-%d").to_string())
-                .unwrap_or_default();
-
-            Ok(TransactionRow {
-                id: row.get(0)?,
-                date,
-                amount: row.get::<_, i64>(2)? as f64 / 100.0,
-                description: row.get(3)?,
-                pending: row.get::<_, i64>(4)? != 0,
-                category: row.get(5)?,
-                account_name: row.get(6)?,
-            })
-        })?;
-
-        self.transactions = rows.collect::<Result<Vec<_>, _>>()?;
-
-        // Apply search filter
+        // Apply search filter (UI-specific, in-memory)
         if !self.search_query.is_empty() {
             let query_lower = self.search_query.to_lowercase();
             self.transactions.retain(|t| {
@@ -300,28 +227,10 @@ impl App {
     }
 
     fn load_holdings(&mut self) -> Result<()> {
-        let (query, params): (String, Vec<String>) = if let Some(ref account_filter) = self.filter_account {
-            (
-                "SELECT h.id, h.account_id, h.symbol, h.description, h.shares, h.price, h.cost_basis, h.market_value, h.currency, h.created_at, h.updated_at
-                 FROM holdings h
-                 JOIN accounts a ON h.account_id = a.id
-                 WHERE a.id LIKE '%' || ?1 || '%' OR a.nickname LIKE '%' || ?1 || '%' OR a.name LIKE '%' || ?1 || '%'
-                 ORDER BY h.market_value DESC NULLS LAST".to_string(),
-                vec![account_filter.clone()]
-            )
-        } else {
-            (
-                "SELECT id, account_id, symbol, description, shares, price, cost_basis, market_value, currency, created_at, updated_at
-                 FROM holdings
-                 ORDER BY market_value DESC NULLS LAST".to_string(),
-                vec![]
-            )
+        self.holdings = match &self.filter_account {
+            Some(filter) => Holding::find_by_account_filter(&self.conn, filter)?,
+            None => Holding::find_all(&self.conn)?,
         };
-
-        let mut stmt = self.conn.prepare(&query)?;
-        self.holdings = stmt
-            .query_map(rusqlite::params_from_iter(params.iter()), Holding::from_row)?
-            .collect::<Result<Vec<_>, _>>()?;
 
         if !self.holdings.is_empty() {
             let selected = self.holdings_state.selected().unwrap_or(0);
@@ -333,15 +242,7 @@ impl App {
     }
 
     fn load_assets(&mut self) -> Result<()> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, asset_type, description, value, cost_basis, currency, acquired_date, metadata, created_at, updated_at
-             FROM assets
-             ORDER BY value DESC NULLS LAST"
-        )?;
-
-        self.assets = stmt
-            .query_map([], Asset::from_row)?
-            .collect::<Result<Vec<_>, _>>()?;
+        self.assets = Asset::find_all(&self.conn)?;
 
         if !self.assets.is_empty() {
             let selected = self.assets_state.selected().unwrap_or(0);
@@ -353,30 +254,8 @@ impl App {
     }
 
     fn load_rules(&mut self) -> Result<()> {
-        // Load categories
-        let mut cat_stmt = self.conn.prepare(
-            "SELECT id, name, parent_id, created_at FROM categories ORDER BY name"
-        )?;
-        self.categories = cat_stmt
-            .query_map([], Category::from_row)?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // Load rules
-        let mut rule_stmt = self.conn.prepare(
-            "SELECT mr.pattern, mr.match_mode, c.name
-             FROM merchant_rules mr
-             JOIN categories c ON mr.category_id = c.id
-             ORDER BY mr.pattern"
-        )?;
-        self.rules = rule_stmt
-            .query_map([], |row| {
-                Ok(RuleRow {
-                    pattern: row.get(0)?,
-                    match_mode: row.get(1)?,
-                    category: row.get(2)?,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
+        self.categories = Category::find_all(&self.conn)?;
+        self.rules = RuleRow::find_all(&self.conn)?;
 
         if !self.rules.is_empty() {
             let selected = self.rules_state.selected().unwrap_or(0);
@@ -959,30 +838,16 @@ impl App {
             let tx_id = tx.id.clone();
             let current_category = tx.category.clone();
 
-            // Load categories directly from database
-            let categories: Vec<(String, String)> = {
-                let mut stmt = match self.conn.prepare("SELECT id, name FROM categories ORDER BY name") {
-                    Ok(s) => s,
-                    Err(_) => {
-                        self.status = Some("Failed to load categories".to_string());
-                        return;
-                    }
-                };
-                match stmt.query_map([], |row| {
-                    let id: i64 = row.get(0)?;
-                    let name: String = row.get(1)?;
-                    Ok((id.to_string(), name))
-                }) {
-                    Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
-                    Err(_) => {
-                        self.status = Some("Failed to load categories".to_string());
-                        return;
-                    }
+            let categories = match Category::find_all_for_select_strings(&self.conn) {
+                Ok(cats) => cats,
+                Err(_) => {
+                    self.status = Some("Failed to load categories".to_string());
+                    return;
                 }
             };
 
             if categories.is_empty() {
-                self.status = Some("No categories defined. Run 'pint rules import' first.".to_string());
+                self.status = Some("No categories defined. Run 'pint setup' first.".to_string());
                 return;
             }
 
@@ -1004,10 +869,7 @@ impl App {
     }
 
     fn execute_categorize_transaction(&mut self, tx_id: &str, category_id: i64, category_name: &str) -> Result<()> {
-        self.conn.execute(
-            "UPDATE transactions SET category_id = ?1 WHERE id = ?2",
-            rusqlite::params![category_id, tx_id],
-        )?;
+        Transaction::set_category(&self.conn, tx_id, category_id)?;
 
         self.load_transactions()?;
         self.status = Some(format!("Category set to '{}'", category_name));
@@ -1023,26 +885,16 @@ impl App {
             let description = tx.description.clone();
             let category = tx.category.clone();
 
-            // Load categories directly from database
-            let categories: Vec<(i64, String)> = {
-                let mut stmt = match self.conn.prepare("SELECT id, name FROM categories ORDER BY name") {
-                    Ok(s) => s,
-                    Err(_) => {
-                        self.status = Some("Failed to load categories".to_string());
-                        return;
-                    }
-                };
-                match stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?))) {
-                    Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
-                    Err(_) => {
-                        self.status = Some("Failed to load categories".to_string());
-                        return;
-                    }
+            let categories = match Category::find_all_for_select(&self.conn) {
+                Ok(cats) => cats,
+                Err(_) => {
+                    self.status = Some("Failed to load categories".to_string());
+                    return;
                 }
             };
 
             if categories.is_empty() {
-                self.status = Some("No categories defined. Run 'pint rules import' first.".to_string());
+                self.status = Some("No categories defined. Run 'pint setup' first.".to_string());
                 return;
             }
 
@@ -1118,16 +970,8 @@ impl App {
     }
 
     fn execute_create_rule(&mut self, _tx_id: &str, pattern: &str, match_mode: &str, category_id: i64, category_name: &str) -> Result<()> {
-        use chrono::Utc;
-
-        // Insert the rule
-        self.conn.execute(
-            "INSERT OR REPLACE INTO merchant_rules (pattern, match_mode, category_id, created_at) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![pattern, match_mode, category_id, Utc::now().timestamp()],
-        )?;
-
-        // Apply rule to ALL matching transactions (not just uncategorized)
-        let count = self.apply_rule_to_matching_transactions(pattern, match_mode, category_id)?;
+        MerchantRule::upsert(&self.conn, pattern, match_mode, category_id)?;
+        let count = MerchantRule::apply_to_transactions(&self.conn, pattern, match_mode, category_id)?;
 
         // Reload data
         self.load_rules()?;
@@ -1138,22 +982,9 @@ impl App {
     }
 
     fn execute_edit_rule(&mut self, _tx_id: &str, old_pattern: &str, new_pattern: &str, match_mode: &str, category_id: i64, category_name: &str) -> Result<()> {
-        use chrono::Utc;
-
-        // Delete old rule
-        self.conn.execute(
-            "DELETE FROM merchant_rules WHERE pattern = ?1",
-            [old_pattern],
-        )?;
-
-        // Insert new/updated rule
-        self.conn.execute(
-            "INSERT INTO merchant_rules (pattern, match_mode, category_id, created_at) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![new_pattern, match_mode, category_id, Utc::now().timestamp()],
-        )?;
-
-        // Apply rule to ALL matching transactions (not just uncategorized)
-        let count = self.apply_rule_to_matching_transactions(new_pattern, match_mode, category_id)?;
+        MerchantRule::delete_by_pattern(&self.conn, old_pattern)?;
+        MerchantRule::upsert(&self.conn, new_pattern, match_mode, category_id)?;
+        let count = MerchantRule::apply_to_transactions(&self.conn, new_pattern, match_mode, category_id)?;
 
         // Reload data
         self.load_rules()?;
@@ -1161,47 +992,6 @@ impl App {
 
         self.status = Some(format!("Rule updated: '{}' → {} ({} transactions)", new_pattern, category_name, count));
         Ok(())
-    }
-
-    /// Apply a single rule to all transactions with matching descriptions
-    fn apply_rule_to_matching_transactions(&self, pattern: &str, match_mode: &str, category_id: i64) -> Result<usize> {
-        let pattern_lower = pattern.to_lowercase();
-
-        // For substring matching, use SQL LIKE which is more reliable
-        if match_mode != "token" {
-            // Substring match - do it directly in SQL
-            let like_pattern = format!("%{}%", pattern_lower);
-            let count = self.conn.execute(
-                "UPDATE transactions SET category_id = ?1 WHERE LOWER(description) LIKE ?2",
-                rusqlite::params![category_id, like_pattern],
-            )?;
-            return Ok(count);
-        }
-
-        // For token matching, we need to do it in Rust since SQL can't easily do word-boundary matching
-        let tx_ids: Vec<(String, String)> = {
-            let mut stmt = self.conn.prepare(
-                "SELECT id, description FROM transactions"
-            )?;
-            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-                .filter_map(|r| r.ok())
-                .collect()
-        };
-
-        let mut count = 0;
-        for (tx_id, description) in tx_ids {
-            let desc_lower = description.to_lowercase();
-            // Token match: check if any word starts with the pattern
-            if desc_lower.split_whitespace().any(|word| word.starts_with(&pattern_lower)) {
-                self.conn.execute(
-                    "UPDATE transactions SET category_id = ?1 WHERE id = ?2",
-                    rusqlite::params![category_id, tx_id],
-                )?;
-                count += 1;
-            }
-        }
-
-        Ok(count)
     }
 }
 

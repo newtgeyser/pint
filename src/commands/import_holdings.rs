@@ -1,28 +1,16 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use chrono::Utc;
-use rusqlite::OptionalExtension;
 use std::path::Path;
 
-use crate::db;
+use crate::db::{self, models::Account};
 
 pub fn run(file_path: &Path, account_query: &str) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
 
-    // Find the account by ID, nickname, or name
-    let account: Option<(String, String)> = conn
-        .query_row(
-            "SELECT id, COALESCE(nickname, name) FROM accounts
-             WHERE id = ?1 OR id LIKE ?1 || '%' OR nickname LIKE '%' || ?1 || '%' OR name LIKE '%' || ?1 || '%'
-             LIMIT 1",
-            [account_query],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?;
-
-    let (account_id, account_name) = match account {
-        Some(a) => a,
-        None => bail!("No account found matching '{}'", account_query),
-    };
+    let account = Account::find_by_query(&conn, account_query)?
+        .ok_or_else(|| anyhow::anyhow!("No account found matching '{}'", account_query))?;
+    let account_id = account.id.clone();
+    let account_name = account.display_name().to_string();
 
     // Read and parse CSV
     let mut reader = csv::Reader::from_path(file_path)

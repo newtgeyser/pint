@@ -1,9 +1,8 @@
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
-use rusqlite::OptionalExtension;
 use std::cmp::Ordering;
 
-use crate::db::{self, models::Holding};
+use crate::db::{self, models::{Account, Holding}};
 use crate::util::truncate;
 
 /// Update account balance to sum of holdings market values
@@ -204,21 +203,10 @@ pub fn add(
 ) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
 
-    // Find the account by ID, nickname, or name
-    let account: Option<(String, String)> = conn
-        .query_row(
-            "SELECT id, COALESCE(nickname, name) FROM accounts
-             WHERE id = ?1 OR id LIKE ?1 || '%' OR nickname LIKE '%' || ?1 || '%' OR name LIKE '%' || ?1 || '%'
-             LIMIT 1",
-            [account_query],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?;
-
-    let (account_id, account_name) = match account {
-        Some(a) => a,
-        None => bail!("No account found matching '{}'", account_query),
-    };
+    let account = Account::find_by_query(&conn, account_query)?
+        .ok_or_else(|| anyhow::anyhow!("No account found matching '{}'", account_query))?;
+    let account_id = account.id.clone();
+    let account_name = account.display_name().to_string();
 
     let now = Utc::now().timestamp();
     let price_cents = (price * 100.0).round() as i64;
@@ -274,34 +262,21 @@ pub fn update(
 ) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
 
-    // Find holding by ID prefix or symbol
-    let holding: Option<(String, String, String, Option<String>)> = conn
-        .query_row(
-            "SELECT id, account_id, shares, symbol FROM holdings
-             WHERE id = ?1 OR id LIKE '%:' || ?1 OR id LIKE ?1 || '%'
-             LIMIT 1",
-            [holding_query.to_uppercase()],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-        )
-        .optional()?;
-
-    let (id, account_id, current_shares, symbol) = match holding {
-        Some(h) => h,
-        None => bail!("No holding found matching '{}'", holding_query),
-    };
+    let holding = Holding::find_by_query(&conn, holding_query)?
+        .ok_or_else(|| anyhow::anyhow!("No holding found matching '{}'", holding_query))?;
 
     let now = Utc::now().timestamp();
-    let new_shares = shares.unwrap_or(&current_shares);
+    let new_shares = shares.unwrap_or(&holding.shares);
 
     conn.execute(
         "UPDATE holdings SET updated_at = ?1 WHERE id = ?2",
-        rusqlite::params![now, id],
+        rusqlite::params![now, holding.id],
     )?;
 
     if let Some(s) = shares {
         conn.execute(
             "UPDATE holdings SET shares = ?1 WHERE id = ?2",
-            rusqlite::params![s, id],
+            rusqlite::params![s, holding.id],
         )?;
     }
 
@@ -312,7 +287,7 @@ pub fn update(
 
         conn.execute(
             "UPDATE holdings SET price = ?1, market_value = ?2 WHERE id = ?3",
-            rusqlite::params![price_cents, market_value_cents, id],
+            rusqlite::params![price_cents, market_value_cents, holding.id],
         )?;
     }
 
@@ -320,15 +295,15 @@ pub fn update(
         let cost_cents = (c * 100.0).round() as i64;
         conn.execute(
             "UPDATE holdings SET cost_basis = ?1 WHERE id = ?2",
-            rusqlite::params![cost_cents, id],
+            rusqlite::params![cost_cents, holding.id],
         )?;
     }
 
-    update_account_balance(&conn, &account_id)?;
+    update_account_balance(&conn, &holding.account_id)?;
 
     println!(
         "Updated holding {}",
-        symbol.as_deref().unwrap_or(&id)
+        holding.symbol.as_deref().unwrap_or(&holding.id)
     );
 
     Ok(())
@@ -337,27 +312,14 @@ pub fn update(
 pub fn remove(holding_query: &str) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
 
-    // Find holding by ID prefix or symbol
-    let holding: Option<(String, String, Option<String>)> = conn
-        .query_row(
-            "SELECT id, account_id, symbol FROM holdings
-             WHERE id = ?1 OR id LIKE '%:' || ?1 OR id LIKE ?1 || '%'
-             LIMIT 1",
-            [holding_query.to_uppercase()],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .optional()?;
+    let holding = Holding::find_by_query(&conn, holding_query)?
+        .ok_or_else(|| anyhow::anyhow!("No holding found matching '{}'", holding_query))?;
 
-    let (id, account_id, symbol) = match holding {
-        Some(h) => h,
-        None => bail!("No holding found matching '{}'", holding_query),
-    };
+    conn.execute("DELETE FROM holdings WHERE id = ?1", [&holding.id])?;
 
-    conn.execute("DELETE FROM holdings WHERE id = ?1", [&id])?;
+    update_account_balance(&conn, &holding.account_id)?;
 
-    update_account_balance(&conn, &account_id)?;
-
-    println!("Removed holding {}", symbol.as_deref().unwrap_or(&id));
+    println!("Removed holding {}", holding.symbol.as_deref().unwrap_or(&holding.id));
 
     Ok(())
 }

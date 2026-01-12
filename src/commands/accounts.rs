@@ -1,6 +1,5 @@
 use anyhow::{bail, Context, Result};
 use chrono::{TimeZone, Utc};
-use rusqlite::OptionalExtension;
 use uuid::Uuid;
 
 use crate::db::{self, models::Account};
@@ -134,19 +133,10 @@ pub fn remove(account_query: &str) -> Result<()> {
 pub fn remove_quiet(account_query: &str, quiet: bool) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
 
-    // Find account by ID (exact or prefix), nickname, or name (partial match)
-    let account: Option<(String, String)> = conn
-        .query_row(
-            "SELECT id, COALESCE(nickname, name) FROM accounts
-             WHERE id = ?1 OR id LIKE ?1 || '%' OR nickname LIKE '%' || ?1 || '%' OR name LIKE '%' || ?1 || '%'
-             LIMIT 1",
-            [account_query],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?;
-
-    match account {
-        Some((id, name)) => {
+    match Account::find_by_query(&conn, account_query)? {
+        Some(account) => {
+            let id = &account.id;
+            let name = account.display_name();
             // Delete associated transactions first
             let txns_deleted = conn.execute(
                 "DELETE FROM transactions WHERE account_id = ?1",
@@ -198,25 +188,14 @@ pub fn set_type_quiet(account_query: &str, account_type: &str, quiet: bool) -> R
 
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
 
-    // Find account by ID (exact or prefix), nickname, or name (partial match)
-    let account: Option<(String, String)> = conn
-        .query_row(
-            "SELECT id, COALESCE(nickname, name) FROM accounts
-             WHERE id = ?1 OR id LIKE ?1 || '%' OR nickname LIKE '%' || ?1 || '%' OR name LIKE '%' || ?1 || '%'
-             LIMIT 1",
-            [account_query],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?;
-
-    match account {
-        Some((id, name)) => {
+    match Account::find_by_query(&conn, account_query)? {
+        Some(account) => {
             conn.execute(
                 "UPDATE accounts SET account_type = ?1, updated_at = ?2 WHERE id = ?3",
-                rusqlite::params![account_type, Utc::now().timestamp(), id],
+                rusqlite::params![account_type, Utc::now().timestamp(), account.id],
             )?;
             if !quiet {
-                println!("Set account '{}' type to '{}'", name, account_type);
+                println!("Set account '{}' type to '{}'", account.display_name(), account_type);
             }
             Ok(())
         }
@@ -231,22 +210,12 @@ pub fn set_nickname(account_query: &str, nickname: Option<&str>) -> Result<()> {
 pub fn set_nickname_quiet(account_query: &str, nickname: Option<&str>, quiet: bool) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
 
-    // Find account by ID (exact or prefix), nickname, or name (partial match)
-    let account: Option<(String, String)> = conn
-        .query_row(
-            "SELECT id, COALESCE(nickname, name) FROM accounts
-             WHERE id = ?1 OR id LIKE ?1 || '%' OR nickname LIKE '%' || ?1 || '%' OR name LIKE '%' || ?1 || '%'
-             LIMIT 1",
-            [account_query],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?;
-
-    match account {
-        Some((id, current_name)) => {
+    match Account::find_by_query(&conn, account_query)? {
+        Some(account) => {
+            let current_name = account.display_name().to_string();
             conn.execute(
                 "UPDATE accounts SET nickname = ?1, updated_at = ?2 WHERE id = ?3",
-                rusqlite::params![nickname, Utc::now().timestamp(), id],
+                rusqlite::params![nickname, Utc::now().timestamp(), account.id],
             )?;
             if !quiet {
                 match nickname {
