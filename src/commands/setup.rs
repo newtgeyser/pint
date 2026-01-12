@@ -1,7 +1,8 @@
 use anyhow::{bail, Context, Result};
 use std::io::{self, Write};
 
-use crate::{config, db, rules, simplefin::SimpleFin};
+use crate::{config, db, simplefin::SimpleFin};
+use super::rules;
 
 const ACCESS_URL_KEY: &str = "simplefin_access_url";
 
@@ -24,10 +25,10 @@ pub fn run() -> Result<()> {
     )?;
 
     if rule_count == 0 {
-        let (rules_imported, categories_created) = rules::import_rules(&conn)?;
+        let (rules_imported, categories_created) = rules::import_default_rules(&conn)?;
         if rules_imported > 0 || categories_created > 0 {
             println!(
-                "Imported {} rules, created {} categories",
+                "Imported {} default rules, created {} categories",
                 rules_imported, categories_created
             );
         }

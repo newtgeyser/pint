@@ -4,7 +4,6 @@ pub mod categories;
 pub mod categorize;
 pub mod holdings;
 pub mod import_holdings;
-pub mod import_rules;
 pub mod rules;
 pub mod setup;
 pub mod sync;

@@ -517,7 +517,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 "a:Add  d:Remove  e:Edit  q:Quit".to_string()
             }
             View::Rules => {
-                "i:Import  p:Apply rules  q:Quit".to_string()
+                "a:Apply rules  q:Quit".to_string()
             }
         }
     };
@@ -543,9 +543,16 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
         DialogType::Input { .. } => 7,
         DialogType::TwoInputs { .. } => 10,
         DialogType::Select { items, .. } => {
-            // Height based on number of items, with min/max bounds
-            let item_count = items.len() as u16;
-            (item_count + 2).clamp(5, area.height.saturating_sub(6))
+            // Filter items based on search input
+            let filter = dialog.input1.to_lowercase();
+            let filtered_count = if filter.is_empty() {
+                items.len()
+            } else {
+                items.iter().filter(|(_, name)| name.to_lowercase().contains(&filter)).count()
+            };
+            // Height: +5 for border, search box, gap, and instructions
+            let item_count = filtered_count as u16;
+            (item_count + 5).clamp(8, area.height.saturating_sub(6))
         }
         DialogType::RuleEditor { .. } => 18, // Fixed height for rule editor
     };
@@ -680,11 +687,41 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             let inner = block.inner(dialog_area);
             frame.render_widget(block, dialog_area);
 
-            // Build list items
-            let list_items: Vec<ListItem> = items
+            // Split inner area: search box at top, list below
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1), // Search input
+                    Constraint::Length(1), // Gap
+                    Constraint::Min(1),    // List
+                ])
+                .split(inner);
+
+            // Render search input with cursor
+            let filter = &dialog.input1;
+            let search_text = format!("🔍 {}_", filter);
+            let search_line = Line::from(vec![
+                Span::styled(&search_text[..4], Style::default().fg(Color::DarkGray)), // magnifier
+                Span::styled(&filter[..], Style::default().fg(Color::White)),
+                Span::styled("▏", Style::default().fg(Color::Yellow)), // cursor
+            ]);
+            frame.render_widget(Paragraph::new(search_line), chunks[0]);
+
+            // Filter items based on search input
+            let filter_lower = filter.to_lowercase();
+            let filtered_items: Vec<(usize, &(String, String))> = items
                 .iter()
                 .enumerate()
-                .map(|(i, (_, display_name))| {
+                .filter(|(_, (_, name))| {
+                    filter_lower.is_empty() || name.to_lowercase().contains(&filter_lower)
+                })
+                .collect();
+
+            // Build list items from filtered results
+            let list_items: Vec<ListItem> = filtered_items
+                .iter()
+                .enumerate()
+                .map(|(i, (_, (_, display_name)))| {
                     let style = if i == *selected {
                         Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                     } else {
@@ -696,7 +733,7 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
                 .collect();
 
             let list = List::new(list_items);
-            frame.render_widget(list, inner);
+            frame.render_widget(list, chunks[2]);
         }
 
         DialogType::RuleEditor { title, focused_field, match_mode, categories, selected_category } => {

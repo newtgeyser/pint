@@ -2,7 +2,8 @@ use anyhow::{Context, Result};
 use chrono::{Duration, NaiveDate, TimeZone, Utc};
 use rusqlite::Connection;
 
-use crate::{db, rules, simplefin::{SimpleFin, AccountSet}};
+use crate::{db, simplefin::{SimpleFin, AccountSet}};
+use super::rules;
 
 use super::setup::get_access_url;
 

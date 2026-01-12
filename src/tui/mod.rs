@@ -177,17 +177,10 @@ fn handle_view_keys(app: &mut App, key: KeyCode) -> Result<()> {
             }
             _ => {}
         },
-        View::Rules => match key {
-            KeyCode::Char('i') => {
-                crate::commands::import_rules::run()?;
-                app.load_data()?;
-                app.status = Some("Rules imported".to_string());
-            }
-            KeyCode::Char('p') => {
-                crate::commands::categorize::run_auto()?;
-                app.status = Some("Rules applied to transactions".to_string());
-            }
-            _ => {}
+        View::Rules => if let KeyCode::Char('a') = key {
+            crate::commands::categorize::run_auto_quiet(true)?;
+            app.load_data()?;
+            app.status = Some("Rules applied to transactions".to_string());
         },
     }
     Ok(())

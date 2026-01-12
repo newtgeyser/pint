@@ -556,10 +556,6 @@ match = "token"
 category = "Transportation"
 
 [[rules]]
-pattern = "UBER*"
-category = "Transportation"
-
-[[rules]]
 pattern = "LYFT"
 category = "Transportation"
 
@@ -581,6 +577,7 @@ category = "Transportation"
 
 [[rules]]
 pattern = "TURO"
+match = "token"
 category = "Transportation"
 
 [[rules]]
@@ -616,6 +613,7 @@ category = "Transportation"
 
 [[rules]]
 pattern = "TOLL"
+match = "token"
 category = "Transportation"
 
 [[rules]]
@@ -651,6 +649,7 @@ category = "Travel"
 
 [[rules]]
 pattern = "IHG"
+match = "token"
 category = "Travel"
 
 [[rules]]
@@ -1354,6 +1353,15 @@ category = "Investments"
 [[rules]]
 pattern = "TD AMERITRADE"
 category = "Investments"
+
+[[rules]]
+pattern = "MORTGAGE"
+category = "Mortgage"
+
+[[rules]]
+pattern = "MTG"
+match = "token"
+category = "Mortgage"
 
 [[rules]]
 pattern = "INTEREST"

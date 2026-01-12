@@ -254,8 +254,6 @@ enum AssetsAction {
 enum RulesAction {
     /// List categories
     Categories,
-    /// Import/reload merchant rules from config file
-    Import,
     /// Apply rules to uncategorized transactions
     Apply,
     /// Categorize a transaction and create a rule for future matches
@@ -417,11 +415,6 @@ fn main() -> Result<()> {
         Commands::Rules { action } => match action {
             None => commands::rules::run(),
             Some(RulesAction::Categories) => commands::categories::run(),
-            Some(RulesAction::Import) => {
-                commands::import_rules::run()?;
-                // Auto-apply after importing rules
-                commands::categorize::run_auto()
-            }
             Some(RulesAction::Apply) => commands::categorize::run_auto(),
             Some(RulesAction::Learn {
                 tx_id,

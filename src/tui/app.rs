@@ -557,8 +557,14 @@ impl App {
 
     pub fn dialog_input(&mut self, c: char) {
         if let Some(ref mut dialog) = self.dialog {
-            match &dialog.dialog_type {
-                DialogType::Confirm { .. } | DialogType::Select { .. } => {}
+            match &mut dialog.dialog_type {
+                DialogType::Confirm { .. } => {}
+                DialogType::Select { selected, .. } => {
+                    // Input goes to search filter, reset selection
+                    dialog.input1.insert(dialog.cursor1, c);
+                    dialog.cursor1 += 1;
+                    *selected = 0;
+                }
                 DialogType::Input { .. } => {
                     dialog.input1.insert(dialog.cursor1, c);
                     dialog.cursor1 += 1;
@@ -585,8 +591,16 @@ impl App {
 
     pub fn dialog_backspace(&mut self) {
         if let Some(ref mut dialog) = self.dialog {
-            match &dialog.dialog_type {
-                DialogType::Confirm { .. } | DialogType::Select { .. } => {}
+            match &mut dialog.dialog_type {
+                DialogType::Confirm { .. } => {}
+                DialogType::Select { selected, .. } => {
+                    // Backspace in search filter, reset selection
+                    if dialog.cursor1 > 0 {
+                        dialog.cursor1 -= 1;
+                        dialog.input1.remove(dialog.cursor1);
+                        *selected = 0;
+                    }
+                }
                 DialogType::Input { .. } => {
                     if dialog.cursor1 > 0 {
                         dialog.cursor1 -= 1;
@@ -615,8 +629,8 @@ impl App {
     pub fn dialog_cursor_left(&mut self) {
         if let Some(ref mut dialog) = self.dialog {
             match &dialog.dialog_type {
-                DialogType::Confirm { .. } | DialogType::Select { .. } => {}
-                DialogType::Input { .. } => {
+                DialogType::Confirm { .. } => {}
+                DialogType::Select { .. } | DialogType::Input { .. } => {
                     if dialog.cursor1 > 0 {
                         dialog.cursor1 -= 1;
                     }
@@ -640,8 +654,8 @@ impl App {
     pub fn dialog_cursor_right(&mut self) {
         if let Some(ref mut dialog) = self.dialog {
             match &dialog.dialog_type {
-                DialogType::Confirm { .. } | DialogType::Select { .. } => {}
-                DialogType::Input { .. } => {
+                DialogType::Confirm { .. } => {}
+                DialogType::Select { .. } | DialogType::Input { .. } => {
                     if dialog.cursor1 < dialog.input1.len() {
                         dialog.cursor1 += 1;
                     }
@@ -694,9 +708,16 @@ impl App {
 
     pub fn dialog_select_down(&mut self) {
         if let Some(ref mut dialog) = self.dialog {
+            let filter = dialog.input1.to_lowercase();
             match &mut dialog.dialog_type {
                 DialogType::Select { selected, items, .. } => {
-                    if *selected < items.len().saturating_sub(1) {
+                    // Count filtered items
+                    let filtered_count = if filter.is_empty() {
+                        items.len()
+                    } else {
+                        items.iter().filter(|(_, name)| name.to_lowercase().contains(&filter)).count()
+                    };
+                    if *selected < filtered_count.saturating_sub(1) {
                         *selected += 1;
                     }
                 }
@@ -757,15 +778,18 @@ impl App {
                     }
                 }
                 DialogAction::FilterByAccount => {
-                    // For Select dialog, get the selected account ID
-                    if let DialogType::Select { items, selected, .. } = dialog.dialog_type {
-                        if let Some((account_id, _)) = items.get(selected) {
-                            self.filter_account = Some(account_id.clone());
+                    // For Select dialog, get the selected account ID from filtered list
+                    if let DialogType::Select { items, selected, .. } = &dialog.dialog_type {
+                        let filter = dialog.input1.to_lowercase();
+                        let filtered_items: Vec<&(String, String)> = if filter.is_empty() {
+                            items.iter().collect()
+                        } else {
+                            items.iter().filter(|(_, name)| name.to_lowercase().contains(&filter)).collect()
+                        };
+                        if let Some((account_id, _)) = filtered_items.get(*selected) {
+                            self.filter_account = Some(account_id.to_string());
                             self.load_data()?;
                         }
-                    } else if !dialog.input1.is_empty() {
-                        self.filter_account = Some(dialog.input1);
-                        self.load_data()?;
                     }
                 }
                 DialogAction::CreateRule { tx_id } => {
@@ -787,11 +811,19 @@ impl App {
                     }
                 }
                 DialogAction::CategorizeTransaction { tx_id } => {
-                    if let DialogType::Select { items, selected, .. } = &dialog.dialog_type
-                        && let Some((category_id_str, category_name)) = items.get(*selected)
-                        && let Ok(category_id) = category_id_str.parse::<i64>()
-                    {
-                        self.execute_categorize_transaction(&tx_id, category_id, category_name)?;
+                    if let DialogType::Select { items, selected, .. } = &dialog.dialog_type {
+                        // Filter items the same way as rendering to get the correct selection
+                        let filter = dialog.input1.to_lowercase();
+                        let filtered_items: Vec<&(String, String)> = if filter.is_empty() {
+                            items.iter().collect()
+                        } else {
+                            items.iter().filter(|(_, name)| name.to_lowercase().contains(&filter)).collect()
+                        };
+                        if let Some((category_id_str, category_name)) = filtered_items.get(*selected)
+                            && let Ok(category_id) = category_id_str.parse::<i64>()
+                        {
+                            self.execute_categorize_transaction(&tx_id, category_id, category_name)?;
+                        }
                     }
                 }
             }
