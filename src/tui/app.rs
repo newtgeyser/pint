@@ -2,42 +2,50 @@ use anyhow::Result;
 use ratatui::widgets::TableState;
 use rusqlite::Connection;
 
-use crate::db::models::{Account, Asset, Category, Holding, MerchantRule, RuleRow, Transaction, TransactionRow};
+use crate::db::models::{Account, Asset, Category, Holding, MerchantRule, RecurringPattern, RuleRow, Transaction, TransactionRow};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum View {
+    Summary,
     Accounts,
     Transactions,
     Holdings,
     Assets,
+    Recurring,
     Rules,
 }
 
 impl View {
-    pub const ALL: [View; 5] = [
+    pub const ALL: [View; 7] = [
+        View::Summary,
         View::Accounts,
         View::Transactions,
         View::Holdings,
         View::Assets,
+        View::Recurring,
         View::Rules,
     ];
 
     pub fn name(&self) -> &'static str {
         match self {
+            View::Summary => "Summary",
             View::Accounts => "Accounts",
             View::Transactions => "Transactions",
             View::Holdings => "Holdings",
             View::Assets => "Assets",
+            View::Recurring => "Recurring",
             View::Rules => "Rules",
         }
     }
 
     pub fn icon(&self) -> &'static str {
         match self {
+            View::Summary => "📊",
             View::Accounts => "🏦",
             View::Transactions => "💵",
             View::Holdings => "📈",
             View::Assets => "🏡",
+            View::Recurring => "🔄",
             View::Rules => "📜",
         }
     }
@@ -50,6 +58,11 @@ impl View {
 /// Type of dialog currently active
 #[derive(Clone, PartialEq, Eq)]
 pub enum DialogType {
+    /// Non-interactive info/progress message
+    Info {
+        title: String,
+        message: String,
+    },
     /// Confirmation dialog (e.g., delete confirmation)
     Confirm {
         title: String,
@@ -113,6 +126,17 @@ pub enum DialogAction {
     CategorizeTransaction { tx_id: String },
 }
 
+/// Summary data aggregated by account type
+#[derive(Default)]
+pub struct SummaryData {
+    pub cash: i64,        // checking + savings
+    pub brokerage: i64,   // brokerage accounts
+    pub retirement: i64,  // retirement accounts
+    pub assets: i64,      // manual assets
+    pub credit: i64,      // credit cards (negative)
+    pub net_worth: i64,   // total
+}
+
 pub struct App {
     pub conn: Connection,
     pub current_view: View,
@@ -120,10 +144,12 @@ pub struct App {
     pub nav_focused: bool,
 
     // View data
+    pub summary: SummaryData,
     pub accounts: Vec<Account>,
     pub transactions: Vec<TransactionRow>,
     pub holdings: Vec<Holding>,
     pub assets: Vec<Asset>,
+    pub recurring: Vec<RecurringPattern>,
     pub categories: Vec<Category>,
     pub rules: Vec<RuleRow>,
 
@@ -132,6 +158,7 @@ pub struct App {
     pub transactions_state: TableState,
     pub holdings_state: TableState,
     pub assets_state: TableState,
+    pub recurring_state: TableState,
     pub rules_state: TableState,
 
     // Search/filter state
@@ -147,6 +174,9 @@ pub struct App {
 
     // Track if user has interacted (to show context-specific help)
     pub has_interacted: bool,
+
+    // Pending sync operation (triggered after next render)
+    pub pending_sync: bool,
 }
 
 
@@ -154,14 +184,16 @@ impl App {
     pub fn new(conn: Connection) -> Self {
         Self {
             conn,
-            current_view: View::Accounts,
+            current_view: View::Summary,
             nav_index: 0,
             nav_focused: false,
 
+            summary: SummaryData::default(),
             accounts: Vec::new(),
             transactions: Vec::new(),
             holdings: Vec::new(),
             assets: Vec::new(),
+            recurring: Vec::new(),
             categories: Vec::new(),
             rules: Vec::new(),
 
@@ -169,6 +201,7 @@ impl App {
             transactions_state: TableState::default().with_selected(0),
             holdings_state: TableState::default().with_selected(0),
             assets_state: TableState::default().with_selected(0),
+            recurring_state: TableState::default().with_selected(0),
             rules_state: TableState::default().with_selected(0),
 
             search_mode: false,
@@ -179,17 +212,60 @@ impl App {
 
             dialog: None,
             has_interacted: false,
+            pending_sync: false,
         }
     }
 
     pub fn load_data(&mut self) -> Result<()> {
         match self.current_view {
+            View::Summary => self.load_summary()?,
             View::Accounts => self.load_accounts()?,
             View::Transactions => self.load_transactions()?,
             View::Holdings => self.load_holdings()?,
             View::Assets => self.load_assets()?,
+            View::Recurring => self.load_recurring()?,
             View::Rules => self.load_rules()?,
         }
+        Ok(())
+    }
+
+    fn load_summary(&mut self) -> Result<()> {
+        // Load accounts to aggregate by type
+        let accounts = Account::find_all(&self.conn)?;
+        let assets = Asset::find_all(&self.conn)?;
+
+        let mut cash: i64 = 0;
+        let mut brokerage: i64 = 0;
+        let mut retirement: i64 = 0;
+        let mut credit: i64 = 0;
+
+        for account in &accounts {
+            let balance = account.balance.unwrap_or(0);
+            match account.account_type.as_str() {
+                "checking" | "savings" => cash += balance,
+                "brokerage" => brokerage += balance,
+                "retirement" => retirement += balance,
+                "credit" => credit += balance, // already negative
+                _ => {} // loan, unknown, etc. - skip for now
+            }
+        }
+
+        let assets_total: i64 = assets.iter().filter_map(|a| a.value).sum();
+
+        let net_worth = cash + brokerage + retirement + assets_total + credit;
+
+        self.summary = SummaryData {
+            cash,
+            brokerage,
+            retirement,
+            assets: assets_total,
+            credit,
+            net_worth,
+        };
+
+        // Also load recurring for display in summary
+        self.recurring = RecurringPattern::detect(&self.conn)?;
+
         Ok(())
     }
 
@@ -253,6 +329,18 @@ impl App {
         Ok(())
     }
 
+    fn load_recurring(&mut self) -> Result<()> {
+        self.recurring = RecurringPattern::detect(&self.conn)?;
+
+        if !self.recurring.is_empty() {
+            let selected = self.recurring_state.selected().unwrap_or(0);
+            if selected >= self.recurring.len() {
+                self.recurring_state.select(Some(self.recurring.len() - 1));
+            }
+        }
+        Ok(())
+    }
+
     fn load_rules(&mut self) -> Result<()> {
         self.categories = Category::find_all(&self.conn)?;
         self.rules = RuleRow::find_all(&self.conn)?;
@@ -291,10 +379,12 @@ impl App {
 
     pub fn list_up(&mut self) {
         let state = match self.current_view {
+            View::Summary => return, // No list navigation in summary
             View::Accounts => &mut self.accounts_state,
             View::Transactions => &mut self.transactions_state,
             View::Holdings => &mut self.holdings_state,
             View::Assets => &mut self.assets_state,
+            View::Recurring => &mut self.recurring_state,
             View::Rules => &mut self.rules_state,
         };
         let selected = state.selected().unwrap_or(0);
@@ -305,10 +395,12 @@ impl App {
 
     pub fn list_down(&mut self) {
         let (state, len) = match self.current_view {
+            View::Summary => return, // No list navigation in summary
             View::Accounts => (&mut self.accounts_state, self.accounts.len()),
             View::Transactions => (&mut self.transactions_state, self.transactions.len()),
             View::Holdings => (&mut self.holdings_state, self.holdings.len()),
             View::Assets => (&mut self.assets_state, self.assets.len()),
+            View::Recurring => (&mut self.recurring_state, self.recurring.len()),
             View::Rules => (&mut self.rules_state, self.rules.len()),
         };
         let selected = state.selected().unwrap_or(0);
@@ -320,10 +412,12 @@ impl App {
     pub fn list_page_up(&mut self) {
         const PAGE_SIZE: usize = 10;
         let state = match self.current_view {
+            View::Summary => return, // No list navigation in summary
             View::Accounts => &mut self.accounts_state,
             View::Transactions => &mut self.transactions_state,
             View::Holdings => &mut self.holdings_state,
             View::Assets => &mut self.assets_state,
+            View::Recurring => &mut self.recurring_state,
             View::Rules => &mut self.rules_state,
         };
         let selected = state.selected().unwrap_or(0);
@@ -333,10 +427,12 @@ impl App {
     pub fn list_page_down(&mut self) {
         const PAGE_SIZE: usize = 10;
         let (state, len) = match self.current_view {
+            View::Summary => return, // No list navigation in summary
             View::Accounts => (&mut self.accounts_state, self.accounts.len()),
             View::Transactions => (&mut self.transactions_state, self.transactions.len()),
             View::Holdings => (&mut self.holdings_state, self.holdings.len()),
             View::Assets => (&mut self.assets_state, self.assets.len()),
+            View::Recurring => (&mut self.recurring_state, self.recurring.len()),
             View::Rules => (&mut self.rules_state, self.rules.len()),
         };
         let selected = state.selected().unwrap_or(0);
@@ -354,12 +450,12 @@ impl App {
                 // Brokerage/retirement accounts show holdings, others show transactions
                 if account.account_type == "brokerage" || account.account_type == "retirement" {
                     self.current_view = View::Holdings;
-                    self.nav_index = 2; // Holdings
+                    self.nav_index = 3; // Holdings (Summary=0, Accounts=1, Transactions=2, Holdings=3)
                     self.holdings_state.select(Some(0));
                     self.load_holdings()?;
                 } else {
                     self.current_view = View::Transactions;
-                    self.nav_index = 1; // Transactions
+                    self.nav_index = 2; // Transactions
                     self.transactions_state.select(Some(0));
                     self.load_transactions()?;
                 }
@@ -437,7 +533,7 @@ impl App {
     pub fn dialog_input(&mut self, c: char) {
         if let Some(ref mut dialog) = self.dialog {
             match &mut dialog.dialog_type {
-                DialogType::Confirm { .. } => {}
+                DialogType::Info { .. } | DialogType::Confirm { .. } => {}
                 DialogType::Select { selected, .. } => {
                     // Input goes to search filter, reset selection
                     dialog.input1.insert(dialog.cursor1, c);
@@ -471,7 +567,7 @@ impl App {
     pub fn dialog_backspace(&mut self) {
         if let Some(ref mut dialog) = self.dialog {
             match &mut dialog.dialog_type {
-                DialogType::Confirm { .. } => {}
+                DialogType::Info { .. } | DialogType::Confirm { .. } => {}
                 DialogType::Select { selected, .. } => {
                     // Backspace in search filter, reset selection
                     if dialog.cursor1 > 0 {
@@ -508,7 +604,7 @@ impl App {
     pub fn dialog_cursor_left(&mut self) {
         if let Some(ref mut dialog) = self.dialog {
             match &dialog.dialog_type {
-                DialogType::Confirm { .. } => {}
+                DialogType::Info { .. } | DialogType::Confirm { .. } => {}
                 DialogType::Select { .. } | DialogType::Input { .. } => {
                     if dialog.cursor1 > 0 {
                         dialog.cursor1 -= 1;
@@ -533,7 +629,7 @@ impl App {
     pub fn dialog_cursor_right(&mut self) {
         if let Some(ref mut dialog) = self.dialog {
             match &dialog.dialog_type {
-                DialogType::Confirm { .. } => {}
+                DialogType::Info { .. } | DialogType::Confirm { .. } => {}
                 DialogType::Select { .. } | DialogType::Input { .. } => {
                     if dialog.cursor1 < dialog.input1.len() {
                         dialog.cursor1 += 1;
@@ -992,6 +1088,43 @@ impl App {
 
         self.status = Some(format!("Rule updated: '{}' → {} ({} transactions)", new_pattern, category_name, count));
         Ok(())
+    }
+
+    // Sync actions
+
+    /// Show sync dialog and set pending flag
+    pub fn start_sync(&mut self) {
+        self.dialog = Some(Dialog {
+            dialog_type: DialogType::Info {
+                title: "Sync".to_string(),
+                message: "Syncing accounts...".to_string(),
+            },
+            input1: String::new(),
+            input2: String::new(),
+            action: DialogAction::AddAccount, // unused for Info dialog
+            cursor1: 0,
+            cursor2: 0,
+        });
+        self.pending_sync = true;
+    }
+
+    /// Execute sync operation (called after dialog is rendered)
+    pub fn execute_sync(&mut self) {
+        use crate::commands::sync;
+
+        self.pending_sync = false;
+
+        match sync::run_with_conn(&self.conn, 30) {
+            Ok(stats) => {
+                self.close_dialog();
+                self.status = Some(stats.summary());
+                let _ = self.load_accounts();
+            }
+            Err(e) => {
+                self.close_dialog();
+                self.status = Some(format!("Sync failed: {}", e));
+            }
+        }
     }
 }
 

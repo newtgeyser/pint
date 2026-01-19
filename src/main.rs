@@ -106,6 +106,9 @@ enum Commands {
         #[command(subcommand)]
         action: Option<RulesAction>,
     },
+
+    /// Show detected recurring transactions
+    Recurring,
 }
 
 #[derive(Subcommand)]
@@ -423,5 +426,7 @@ fn main() -> Result<()> {
                 r#match,
             }) => commands::categorize::run_learn(&tx_id, &category, &pattern, &r#match),
         },
+
+        Commands::Recurring => commands::recurring::run(),
     }
 }

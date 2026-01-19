@@ -233,6 +233,19 @@ pub fn categorize_transaction(conn: &Connection, tx_id: &str, category_id: i64) 
     Ok(rows > 0)
 }
 
+/// Create an in-memory database for testing with schema initialized.
+/// This is public so integration tests can use it.
+pub fn open_in_memory() -> Result<Connection> {
+    let conn = Connection::open_in_memory()
+        .context("Failed to create in-memory database")?;
+
+    conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+    schema::create_tables(&conn)?;
+    schema::migrate(&conn)?;
+
+    Ok(conn)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

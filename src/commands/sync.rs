@@ -10,37 +10,63 @@ use super::setup::get_access_url;
 const BACKFILL_CHUNK_DAYS: i64 = 60;
 const BACKFILL_MAX_REQUESTS: usize = 12;
 
-struct SyncStats {
-    accounts: usize,
-    inserted: usize,
-    updated: usize,
-    holdings: usize,
+pub struct SyncStats {
+    pub accounts: usize,
+    pub inserted: usize,
+    pub modified: usize,
+    pub holdings: usize,
+    pub warnings: Vec<String>,
+}
+
+impl SyncStats {
+    pub fn summary(&self) -> String {
+        let tx_word = if self.inserted == 1 { "transaction" } else { "transactions" };
+        let mut summary = format!(
+            "Synced {} accounts, {} new {}",
+            self.accounts, self.inserted, tx_word
+        );
+        if self.modified > 0 {
+            summary.push_str(&format!(", {} modified", self.modified));
+        }
+        if self.holdings > 0 {
+            summary.push_str(&format!(", {} holdings", self.holdings));
+        }
+        summary
+    }
 }
 
 pub fn run(days: u32) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
-    let access_url = get_access_url(&conn)?;
+    println!("Fetching transactions from the last {} days...", days);
+    let stats = run_with_conn(&conn, days)?;
+    println!("{}", stats.summary());
+    if !stats.warnings.is_empty() {
+        eprintln!("SimpleFIN warnings:");
+        for warning in &stats.warnings {
+            eprintln!("  - {}", warning);
+        }
+    }
+    auto_categorize(&conn)?;
+    Ok(())
+}
+
+/// Run sync with an existing connection, returning stats without printing.
+pub fn run_with_conn(conn: &Connection, days: u32) -> Result<SyncStats> {
+    let access_url = get_access_url(conn)?;
     let client = SimpleFin::new(access_url)?;
 
     let now = Utc::now();
     let start = now - Duration::days(days as i64);
 
-    println!("Fetching transactions from the last {} days...", days);
-
     let account_set = client.fetch_accounts(Some(start.timestamp()), Some(now.timestamp()))?;
-    let stats = import_accounts(&conn, &account_set)?;
+    let warnings = account_set.errors.clone();
+    let mut stats = import_accounts(conn, &account_set)?;
+    stats.warnings = warnings;
 
-    let mut summary = format!(
-        "Synced {} accounts, {} new transactions, {} updated",
-        stats.accounts, stats.inserted, stats.updated
-    );
-    if stats.holdings > 0 {
-        summary.push_str(&format!(", {} holdings", stats.holdings));
-    }
-    println!("{}", summary);
+    // Auto-categorize
+    rules::auto_categorize_all(conn)?;
 
-    auto_categorize(&conn)?;
-    Ok(())
+    Ok(stats)
 }
 
 pub fn run_backfill(from: Option<NaiveDate>) -> Result<()> {
@@ -53,7 +79,7 @@ pub fn run_backfill(from: Option<NaiveDate>) -> Result<()> {
         None => Utc::now(),
     };
     let mut total_inserted = 0;
-    let mut total_updated = 0;
+    let mut total_modified = 0;
     let mut requests = 0;
 
     match from {
@@ -94,20 +120,20 @@ pub fn run_backfill(from: Option<NaiveDate>) -> Result<()> {
         let stats = import_accounts(&conn, &account_set)?;
 
         println!(
-            "    -> {} new, {} updated",
-            stats.inserted, stats.updated
+            "    -> {} new, {} modified",
+            stats.inserted, stats.modified
         );
 
         total_inserted += stats.inserted;
-        total_updated += stats.updated;
+        total_modified += stats.modified;
 
         // Move window back
         end = start;
     }
 
     println!(
-        "Backfill complete: {} requests, {} new transactions, {} updated",
-        requests, total_inserted, total_updated
+        "Backfill complete: {} requests, {} new transactions, {} modified",
+        requests, total_inserted, total_modified
     );
 
     auto_categorize(&conn)?;
@@ -118,7 +144,7 @@ fn import_accounts(conn: &Connection, account_set: &AccountSet) -> Result<SyncSt
     let now_ts = Utc::now().timestamp();
     let mut accounts_updated = 0;
     let mut transactions_inserted = 0;
-    let mut transactions_updated = 0;
+    let mut transactions_modified = 0;
     let mut holdings_updated = 0;
 
     for account in &account_set.accounts {
@@ -155,9 +181,9 @@ fn import_accounts(conn: &Connection, account_set: &AccountSet) -> Result<SyncSt
         accounts_updated += 1;
 
         for tx in &account.transactions {
-            let (inserted, updated) = import_transaction(conn, &account.id, tx, now_ts)?;
+            let (inserted, modified) = import_transaction(conn, &account.id, tx, now_ts)?;
             transactions_inserted += inserted;
-            transactions_updated += updated;
+            transactions_modified += modified;
         }
 
         // Import holdings
@@ -170,24 +196,43 @@ fn import_accounts(conn: &Connection, account_set: &AccountSet) -> Result<SyncSt
     Ok(SyncStats {
         accounts: accounts_updated,
         inserted: transactions_inserted,
-        updated: transactions_updated,
+        modified: transactions_modified,
         holdings: holdings_updated,
+        warnings: Vec::new(), // Populated by caller with account_set.errors
     })
 }
 
+/// Returns (inserted, modified) - modified only if data actually changed
 fn import_transaction(
     conn: &Connection,
     account_id: &str,
     tx: &crate::simplefin::Transaction,
     now_ts: i64,
 ) -> Result<(usize, usize)> {
-    let amount_cents = tx.amount_cents()?;
+    use rusqlite::OptionalExtension;
 
-    let existed: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM transactions WHERE id = ?1)",
-        [tx.id.as_str()],
-        |row| row.get(0),
-    )?;
+    let amount_cents = tx.amount_cents()?;
+    let new_pending = tx.pending as i64;
+
+    // Check if transaction exists and if key fields differ
+    let existing: Option<(i64, i64, String, i64)> = conn
+        .query_row(
+            "SELECT posted, amount, description, pending FROM transactions WHERE id = ?1",
+            [tx.id.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()?;
+
+    let (is_new, is_modified) = match existing {
+        None => (true, false),
+        Some((old_posted, old_amount, old_desc, old_pending)) => {
+            let changed = old_posted != tx.posted
+                || old_amount != amount_cents
+                || old_desc != tx.description
+                || old_pending != new_pending;
+            (false, changed)
+        }
+    };
 
     conn.execute(
         "INSERT INTO transactions (id, account_id, posted, amount, description, pending, created_at, updated_at)
@@ -205,12 +250,12 @@ fn import_transaction(
             tx.posted,
             amount_cents,
             tx.description,
-            tx.pending as i64,
+            new_pending,
             now_ts,
         ],
     )?;
 
-    Ok(((!existed) as usize, existed as usize))
+    Ok((is_new as usize, is_modified as usize))
 }
 
 fn import_holding(

@@ -533,3 +533,169 @@ impl Asset {
         Ok(assets)
     }
 }
+
+/// A detected recurring transaction pattern.
+#[derive(Debug, Clone)]
+pub struct RecurringPattern {
+    pub merchant: String,
+    pub category: Option<String>,
+    pub frequency: String,      // "monthly" or "bi-monthly"
+    pub avg_amount: f64,        // average amount in dollars
+    pub occurrences: usize,
+    pub last_date: String,
+}
+
+impl RecurringPattern {
+    /// Detect recurring transaction patterns from transaction history.
+    /// Looks for transactions with similar descriptions occurring at regular intervals.
+    pub fn detect(conn: &Connection) -> Result<Vec<RecurringPattern>> {
+        use chrono::{TimeZone, Utc};
+        use std::collections::HashMap;
+
+        // Fetch all non-pending transactions with their details
+        let mut stmt = conn.prepare(
+            "SELECT t.description, t.posted, t.amount, c.name as category
+             FROM transactions t
+             LEFT JOIN categories c ON t.category_id = c.id
+             WHERE t.pending = 0
+             ORDER BY t.posted ASC"
+        )?;
+
+        // Group transactions by normalized merchant name
+        let mut groups: HashMap<String, Vec<(i64, i64, Option<String>)>> = HashMap::new();
+
+        let rows = stmt.query_map([], |row| {
+            let description: String = row.get(0)?;
+            let posted: i64 = row.get(1)?;
+            let amount: i64 = row.get(2)?;
+            let category: Option<String> = row.get(3)?;
+            Ok((description, posted, amount, category))
+        })?;
+
+        for row in rows {
+            let (description, posted, amount, category) = row?;
+            // Normalize: lowercase, stop at special chars, take first 25 chars, trim
+            let normalized = description
+                .to_lowercase()
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || c.is_whitespace())
+                .take(25)
+                .collect::<String>()
+                .trim()
+                .to_string();
+
+            if !normalized.is_empty() {
+                groups
+                    .entry(normalized)
+                    .or_default()
+                    .push((posted, amount, category));
+            }
+        }
+
+        let mut patterns = Vec::new();
+
+        for (merchant, mut transactions) in groups {
+            // Need at least 3 occurrences to detect a pattern
+            if transactions.len() < 3 {
+                continue;
+            }
+
+            // Sort by date (should already be, but ensure)
+            transactions.sort_by_key(|(posted, _, _)| *posted);
+
+            // Calculate intervals between consecutive transactions (in days)
+            let intervals: Vec<i64> = transactions
+                .windows(2)
+                .map(|w| (w[1].0 - w[0].0) / 86400) // seconds to days
+                .collect();
+
+            // Check if intervals are consistent
+            if let Some(frequency) = Self::detect_frequency(&intervals) {
+                let amounts: Vec<f64> = transactions
+                    .iter()
+                    .map(|(_, amt, _)| *amt as f64 / 100.0)
+                    .collect();
+                let avg_amount = amounts.iter().sum::<f64>() / amounts.len() as f64;
+
+                // Get category from most recent transaction
+                let category = transactions.last().and_then(|(_, _, cat)| cat.clone());
+
+                // Format last date
+                let last_posted = transactions.last().map(|(p, _, _)| *p).unwrap_or(0);
+                let last_date = Utc
+                    .timestamp_opt(last_posted, 0)
+                    .single()
+                    .map(|dt| dt.format("%Y-%m-%d").to_string())
+                    .unwrap_or_default();
+
+                // Capitalize first letter of merchant for display
+                let merchant_display = if let Some(first) = merchant.chars().next() {
+                    first.to_uppercase().to_string() + &merchant[first.len_utf8()..]
+                } else {
+                    merchant
+                };
+
+                patterns.push(RecurringPattern {
+                    merchant: merchant_display,
+                    category,
+                    frequency,
+                    avg_amount,
+                    occurrences: transactions.len(),
+                    last_date,
+                });
+            }
+        }
+
+        // Exclude Income, Transfers, and Investments categories
+        let excluded_categories = ["income", "transfers", "investments"];
+        patterns.retain(|p| {
+            p.category
+                .as_ref()
+                .map(|c| !excluded_categories.iter().any(|exc| c.to_lowercase() == *exc))
+                .unwrap_or(true) // Keep uncategorized
+        });
+
+        // Sort by last date (most recent first)
+        patterns.sort_by(|a, b| b.last_date.cmp(&a.last_date));
+
+        Ok(patterns)
+    }
+
+    /// Detect if intervals match a known frequency pattern.
+    /// Returns Some("monthly") or Some("bi-monthly") if pattern detected.
+    fn detect_frequency(intervals: &[i64]) -> Option<String> {
+        if intervals.is_empty() {
+            return None;
+        }
+
+        let avg_interval = intervals.iter().sum::<i64>() as f64 / intervals.len() as f64;
+
+        // Calculate standard deviation to check consistency
+        let variance = intervals
+            .iter()
+            .map(|&i| {
+                let diff = i as f64 - avg_interval;
+                diff * diff
+            })
+            .sum::<f64>()
+            / intervals.len() as f64;
+        let std_dev = variance.sqrt();
+
+        // Allow some tolerance in interval consistency (up to 7 days std dev)
+        if std_dev > 7.0 {
+            return None;
+        }
+
+        // Monthly: 25-35 days average
+        if (25.0..=35.0).contains(&avg_interval) {
+            return Some("monthly".to_string());
+        }
+
+        // Bi-monthly: 55-70 days average
+        if (55.0..=70.0).contains(&avg_interval) {
+            return Some("bi-monthly".to_string());
+        }
+
+        None
+    }
+}

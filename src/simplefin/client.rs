@@ -97,12 +97,8 @@ impl SimpleFin {
         let account_set: AccountSet =
             serde_json::from_str(&text).context("Failed to parse account data")?;
 
-        if !account_set.errors.is_empty() {
-            eprintln!("SimpleFIN warnings:");
-            for error in &account_set.errors {
-                eprintln!("  - {}", error);
-            }
-        }
+        // Note: account_set.errors contains any warnings from SimpleFIN
+        // The caller can check and display these as needed
 
         Ok(account_set)
     }

@@ -38,6 +38,9 @@ fn draw_title(frame: &mut Frame, app: &App, area: Rect) {
         if account_filter.is_empty() { String::new() } else { format!(" {}", account_filter) });
 
     let right_part = match app.current_view {
+        View::Summary => {
+            format!("💰 Net Worth: ${} ", format_amount(app.summary.net_worth, "USD"))
+        }
         View::Accounts => {
             let total = app.accounts_total();
             format!("💰 Total: ${} ", format_amount(total, "USD"))
@@ -52,6 +55,9 @@ fn draw_title(frame: &mut Frame, app: &App, area: Rect) {
         View::Assets => {
             let total = app.assets_total();
             format!("💰 Total: ${} ", format_amount(total, "USD"))
+        }
+        View::Recurring => {
+            format!("{} recurring ", app.recurring.len())
         }
         View::Rules => {
             format!("{} rules ", app.rules.len())
@@ -140,12 +146,81 @@ fn draw_main_content(frame: &mut Frame, app: &mut App, area: Rect) {
     frame.render_widget(block, area);
 
     match app.current_view {
+        View::Summary => draw_summary(frame, app, inner),
         View::Accounts => draw_accounts(frame, app, inner),
         View::Transactions => draw_transactions(frame, app, inner),
         View::Holdings => draw_holdings(frame, app, inner),
         View::Assets => draw_assets(frame, app, inner),
+        View::Recurring => draw_recurring(frame, app, inner),
         View::Rules => draw_rules(frame, app, inner),
     }
+}
+
+fn draw_summary(frame: &mut Frame, app: &App, area: Rect) {
+    let summary = &app.summary;
+
+    // Helper to format a row with label and value
+    let format_row = |label: &str, value: i64, color: Color| -> Line {
+        let amount_str = format!("${}", format_amount(value, "USD"));
+        Line::from(vec![
+            Span::styled(format!("{:<20}", label), Style::default().fg(Color::Gray)),
+            Span::styled(format!("{:>15}", amount_str), Style::default().fg(color)),
+        ])
+    };
+
+    // Determine colors based on positive/negative
+    let positive_color = Color::Green;
+    let negative_color = Color::Red;
+
+    let mut lines = vec![
+        Line::from(""),
+        Line::from(Span::styled("  Net Worth Summary", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled("  ─────────────────────────────────", Style::default().fg(Color::DarkGray))),
+        format_row("  Cash", summary.cash, if summary.cash >= 0 { positive_color } else { negative_color }),
+        format_row("  Brokerage", summary.brokerage, if summary.brokerage >= 0 { positive_color } else { negative_color }),
+        format_row("  Retirement", summary.retirement, if summary.retirement >= 0 { positive_color } else { negative_color }),
+        format_row("  Assets", summary.assets, if summary.assets >= 0 { positive_color } else { negative_color }),
+        format_row("  Credit Cards", summary.credit, if summary.credit >= 0 { positive_color } else { negative_color }),
+        Line::from(Span::styled("  ─────────────────────────────────", Style::default().fg(Color::DarkGray))),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(format!("{:<20}", "  NET WORTH"), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{:>15}", format!("${}", format_amount(summary.net_worth, "USD"))),
+                Style::default()
+                    .fg(if summary.net_worth >= 0 { Color::Green } else { Color::Red })
+                    .add_modifier(Modifier::BOLD)
+            ),
+        ]),
+    ];
+
+    // Add recurring expenses section if there are any
+    if !app.recurring.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled("  Recurring Expenses", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))));
+        lines.push(Line::from(Span::styled("  ──────────────────────────────────────────", Style::default().fg(Color::DarkGray))));
+
+        for pattern in &app.recurring {
+            let amount_str = format!("${:.2}", pattern.avg_amount.abs());
+            let merchant_display = if pattern.merchant.len() > 30 {
+                format!("{}...", &pattern.merchant[..27])
+            } else {
+                pattern.merchant.clone()
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {:<30}", merchant_display), Style::default().fg(Color::Gray)),
+                Span::styled(
+                    format!("{:>12}", amount_str),
+                    Style::default().fg(if pattern.avg_amount < 0.0 { Color::Red } else { Color::Green })
+                ),
+            ]));
+        }
+    }
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, area);
 }
 
 fn draw_accounts(frame: &mut Frame, app: &mut App, area: Rect) {
@@ -418,6 +493,65 @@ fn draw_assets(frame: &mut Frame, app: &mut App, area: Rect) {
     frame.render_stateful_widget(table, area, &mut app.assets_state);
 }
 
+fn draw_recurring(frame: &mut Frame, app: &mut App, area: Rect) {
+    if app.recurring.is_empty() {
+        let msg = Paragraph::new("No recurring transactions detected.\n\nRecurring transactions are identified by:\n  - At least 3 similar transactions\n  - Consistent intervals (monthly or bi-monthly)");
+        frame.render_widget(msg, area);
+        return;
+    }
+
+    // Fixed columns: AMOUNT(12) + FREQ(12) + COUNT(6) + LAST(12) = 42
+    // MERCHANT gets the remaining space
+    let fixed_width: u16 = 12 + 12 + 6 + 12;
+    let merchant_width = area.width.saturating_sub(fixed_width + 4) as usize; // +4 for column spacing
+
+    let header = Row::new(vec!["MERCHANT", "AMOUNT", "FREQUENCY", "COUNT", "LAST"])
+        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .bottom_margin(1);
+
+    let rows: Vec<Row> = app
+        .recurring
+        .iter()
+        .map(|r| {
+            let amount_str = format!("{:.2}", r.avg_amount);
+            let amount_style = if r.avg_amount < 0.0 {
+                Style::default().fg(Color::Red)
+            } else {
+                Style::default().fg(Color::Green)
+            };
+
+            let category_suffix = r.category
+                .as_ref()
+                .map(|c| format!(" [{}]", truncate(c, 12)))
+                .unwrap_or_default();
+
+            Row::new(vec![
+                Span::raw(format!("{}{}", truncate(&r.merchant, merchant_width.saturating_sub(15)), category_suffix)),
+                Span::styled(format!("{:>12}", amount_str), amount_style),
+                Span::raw(format!("{:>12}", r.frequency)),
+                Span::raw(format!("{:>6}", r.occurrences)),
+                Span::raw(r.last_date.clone()),
+            ])
+        })
+        .collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Min(15),
+            Constraint::Length(12),
+            Constraint::Length(12),
+            Constraint::Length(6),
+            Constraint::Length(12),
+        ],
+    )
+    .header(header)
+    .row_highlight_style(Style::default().bg(Color::DarkGray).fg(Color::White))
+    .highlight_spacing(HighlightSpacing::Always);
+
+    frame.render_stateful_widget(table, area, &mut app.recurring_state);
+}
+
 fn draw_rules(frame: &mut Frame, app: &mut App, area: Rect) {
     // Split area for categories and rules
     let chunks = Layout::default()
@@ -499,8 +633,11 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         // Show view-specific commands after user interacts
         match app.current_view {
+            View::Summary => {
+                "s:Sync  Tab:Switch pane  q:Quit".to_string()
+            }
             View::Accounts => {
-                "a:Add  d:Remove  r:Rename  t:Set type  Enter:View  /:Search  q:Quit".to_string()
+                "s:Sync  a:Add  d:Remove  r:Rename  t:Type  Enter:View  /:Search  q:Quit".to_string()
             }
             View::Transactions => {
                 let filter_status = if app.filter_account.is_some() || !app.search_query.is_empty() {
@@ -515,6 +652,9 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             }
             View::Assets => {
                 "a:Add  d:Remove  e:Edit  q:Quit".to_string()
+            }
+            View::Recurring => {
+                "↑↓:Navigate  q:Quit".to_string()
             }
             View::Rules => {
                 "a:Apply rules  q:Quit".to_string()
@@ -539,6 +679,7 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
     let area = frame.area();
     let dialog_width = 60.min(area.width.saturating_sub(4));
     let dialog_height = match &dialog.dialog_type {
+        DialogType::Info { .. } => 5,
         DialogType::Confirm { .. } => 7,
         DialogType::Input { .. } => 7,
         DialogType::TwoInputs { .. } => 10,
@@ -569,6 +710,24 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
 
     // Draw dialog content based on type
     match &dialog.dialog_type {
+        DialogType::Info { title, message } => {
+            let block = Block::default()
+                .title(format!(" {} ", title))
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Cyan).bg(Color::Black));
+
+            let inner = block.inner(dialog_area);
+            frame.render_widget(block, dialog_area);
+
+            let text = vec![
+                Line::from(""),
+                Line::from(message.as_str()),
+            ];
+            let paragraph = Paragraph::new(text)
+                .style(Style::default().bg(Color::Black))
+                .alignment(ratatui::layout::Alignment::Center);
+            frame.render_widget(paragraph, inner);
+        }
         DialogType::Confirm { title, message } => {
             let block = Block::default()
                 .title(format!(" {} ", title))

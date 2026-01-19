@@ -48,6 +48,12 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
     loop {
         terminal.draw(|frame| ui::draw(frame, app))?;
 
+        // Handle pending sync after render (so dialog is visible)
+        if app.pending_sync {
+            app.execute_sync();
+            continue;
+        }
+
         if let Event::Key(key) = event::read()? {
             if key.kind != KeyEventKind::Press {
                 continue;
@@ -147,11 +153,16 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
 
 fn handle_view_keys(app: &mut App, key: KeyCode) -> Result<()> {
     match app.current_view {
+        View::Summary => match key {
+            KeyCode::Char('s') => app.start_sync(),
+            _ => {}
+        },
         View::Accounts => match key {
             KeyCode::Char('a') => app.show_add_account_dialog(),
             KeyCode::Char('d') => app.show_remove_account_dialog(),
             KeyCode::Char('r') => app.show_rename_account_dialog(),
             KeyCode::Char('t') => app.show_set_type_dialog(),
+            KeyCode::Char('s') => app.start_sync(),
             _ => {}
         },
         View::Transactions => match key {
@@ -163,6 +174,9 @@ fn handle_view_keys(app: &mut App, key: KeyCode) -> Result<()> {
         },
         View::Holdings => {
             // Holdings-specific keys can be added here
+        }
+        View::Recurring => {
+            // Recurring-specific keys can be added here
         }
         View::Assets => match key {
             // TODO: implement asset actions
