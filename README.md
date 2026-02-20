@@ -1,13 +1,15 @@
 # Pint
 
-A personal finance transaction manager that imports data from [SimpleFIN](https://www.simplefin.org/) and stores it in a local SQLite database. Built to be slim, durable, and fully under your control—your data stays on your machine.
+A personal finance manager that imports data from [SimpleFIN](https://www.simplefin.org/) and stores it in a local SQLite database. Built to be slim, durable, and fully under your control—your data stays on your machine.
 
 ## Why Pint?
 
 Mint-style financial services get bought, discontinue products and sell your data. Pint exists so you are not the product.
 - Imports transactions from bank accounts without storing credentials
+- Tracks holdings, assets, and reward points for a full net worth picture
 - Keeps all data locally (SQLite)
-- Allows enrichment (categories, tags, transfer linking)
+- Allows enrichment (categories, rules, recurring detection)
+- Interactive TUI for browsing everything at a glance
 
 SimpleFIN acts as the bridge to financial institutions—you authenticate with them, and Pint just fetches the data.
 
@@ -28,46 +30,48 @@ The binary is self-contained (~7MB) with SQLite bundled.
 ## Quick Start
 
 ```bash
-# 1. Initialize the database
-pint init
-
-# 2. Import default categorization rules (377 common merchants)
-pint import-rules
-
-# 3. Get a setup token from https://beta-bridge.simplefin.org/
-#    Connect your bank accounts there, then get a token
+# 1. Initialize the database and configure SimpleFIN access
 pint setup
 
-# 4. Fetch transactions (last 30 days by default)
+# 2. Fetch transactions (last 30 days by default)
 pint sync
 
-# 5. Auto-categorize transactions using rules
+# 3. Auto-categorize transactions using rules
 pint categorize auto
 
-# 6. View your data
+# 4. View your data
 pint accounts
 pint transactions
+pint tui
 ```
 
 ## Commands
 
-### Core
+### Setup & Sync
 
 | Command | Description |
 |---------|-------------|
-| `pint init` | Initialize the database |
-| `pint setup` | Configure SimpleFIN access (one-time) |
+| `pint setup` | Initialize database and configure SimpleFIN access |
 | `pint sync [--days N]` | Fetch transactions (default: 30, max: 60) |
-| `pint backfill` | Fetch historical transactions (up to ~2 years) |
+| `pint sync --backfill` | Fetch historical transactions (up to ~2 years) |
+| `pint tui` | Launch interactive terminal UI |
 
-### Viewing Data
+### Accounts
 
 | Command | Description |
 |---------|-------------|
 | `pint accounts` | List accounts with balances |
-| `pint transactions [options]` | List transactions with filters |
-| `pint categories` | List all categories |
-| `pint rules` | List merchant categorization rules |
+| `pint accounts add <name>` | Add a manual account |
+| `pint accounts remove <id>` | Remove an account and its transactions/holdings |
+| `pint accounts set-type <id> <type>` | Set account type (cash, credit, brokerage, retirement) |
+| `pint accounts rename <id> <nickname>` | Set or clear an account nickname |
+
+### Transactions
+
+| Command | Description |
+|---------|-------------|
+| `pint transactions` | List transactions with filters |
+| `pint recurring` | Show detected recurring transactions |
 
 #### Transaction Filters
 
@@ -85,7 +89,8 @@ pint transactions --limit 100               # Limit results (default: 50)
 
 | Command | Description |
 |---------|-------------|
-| `pint import-rules` | Load/reload rules from config file |
+| `pint rules` | List categorization rules |
+| `pint rules categories` | List all categories |
 | `pint categorize auto` | Auto-categorize using merchant rules |
 | `pint categorize set <tx-id> <category>` | Manually set category |
 | `pint categorize learn <tx-id> <category> <pattern>` | Set category and create rule |
@@ -110,6 +115,88 @@ pint categorize learn abc123 "Coffee & Cafes" "JOES COFFEE"
 # Future transactions matching "JOES COFFEE" will auto-categorize
 ```
 
+### Holdings & Assets
+
+| Command | Description |
+|---------|-------------|
+| `pint holdings` | List investment holdings |
+| `pint holdings add <account> <symbol> <shares> <price>` | Add a holding |
+| `pint holdings update <id> --price <price>` | Update a holding |
+| `pint holdings update-prices` | Update prices from Yahoo Finance |
+| `pint holdings import <csv>` | Import holdings from CSV |
+| `pint holdings remove <id>` | Remove a holding |
+| `pint assets` | List manual assets (real estate, vehicles, etc.) |
+| `pint assets add <name> <value> --type <type>` | Add an asset |
+| `pint assets update <id> --value <value>` | Update an asset value |
+| `pint assets remove <id>` | Remove an asset |
+
+### Reward Points
+
+| Command | Description |
+|---------|-------------|
+| `pint points` | List all reward point balances |
+| `pint points set <program> <points> -n <note>` | Set points for a program (upsert) |
+| `pint points add <program> <points> -n <note>` | Add a new program |
+| `pint points remove <id>` | Remove a program |
+
+## Scraping Reward Points
+
+Pint includes a [Claude Code](https://docs.anthropic.com/en/docs/claude-code) slash command (`/scrape-points`) that uses Playwright to log into bank websites, read reward point balances, and store them via `pint points set`. Claude adaptively reads page snapshots instead of brittle CSS selectors, so bank site layout changes don't break things. MFA challenges are handled interactively in the conversation.
+
+### Prerequisites
+
+1. **Claude Code** installed and working
+2. **Chromium** running with remote debugging enabled:
+   ```bash
+   chromium --remote-debugging-port=9222
+   ```
+3. **Playwright MCP** configured in `.mcp.json` at the project root:
+   ```json
+   {
+     "mcpServers": {
+       "playwright": {
+         "command": "npx",
+         "args": [
+           "@playwright/mcp@latest",
+           "--cdp-endpoint", "http://localhost:9222"
+         ]
+       }
+     }
+   }
+   ```
+4. **Credentials file** at `~/.config/pint/secrets.env`:
+   ```env
+   # Single-account bank
+   BANKNAME_USER=myusername
+   BANKNAME_PASS="myp@ssword"
+
+   # Bank with multiple logins
+   CHASE_USER_1=login1
+   CHASE_PASS_1="pass1"
+   CHASE_USER_2=login2
+   CHASE_PASS_2="pass2"
+   ```
+   The naming convention is `BANKNAME_USER` / `BANKNAME_PASS` for single accounts, or `BANKNAME_USER_N` / `BANKNAME_PASS_N` for banks where you have multiple logins.
+
+### Usage
+
+In a Claude Code session:
+
+```
+/scrape-points
+```
+
+Claude will read your credentials, log into each bank sequentially, scrape reward balances, and store them. If MFA is triggered, it will ask you for the code in the conversation.
+
+## TUI
+
+`pint tui` launches an interactive terminal interface with:
+
+- **Summary** — net worth overview with account type breakdown, holdings, assets, and reward points
+- **Accounts** — balances across all accounts
+- **Transactions** — searchable, filterable transaction list
+- **Recurring** — detected recurring expenses with frequency and average amounts
+
 ## Data Location
 
 | Platform | Path |
@@ -118,85 +205,28 @@ pint categorize learn abc123 "Coffee & Cafes" "JOES COFFEE"
 | macOS | `~/Library/Application Support/pint/` |
 
 Contents:
-- `pint.db` - SQLite database
-- `rules.toml` - Merchant categorization rules (editable)
+- `pint.db` — SQLite database
+- `rules.toml` — Merchant categorization rules (editable)
 
-## Default Categories
-
-The default rules file includes 377 patterns across 25 categories:
-
-- Cash
-- Charity
-- Childcare
-- Coffee & Cafes
-- Education
-- Entertainment
-- Gas & Auto
-- Government
-- Groceries
-- Health
-- Home Services
-- Income
-- Insurance
-- Investments
-- Personal Care
-- Pets
-- Restaurants
-- Shipping
-- Shopping
-- Subscriptions
-- Taxes
-- Transfers
-- Transportation
-- Travel
-- Utilities
-
-Edit `~/.local/share/pint/rules.toml` to customize, then run `pint import-rules`.
-
-## Current Status
-
-### Working
-
-- SimpleFIN integration (token exchange, account/transaction sync)
-- Historical backfill (fetches in 60-day chunks, up to ~2 years)
-- SQLite storage with proper schema
-- Transaction listing with filters
-- Merchant-based auto-categorization
-- Manual categorization with rule learning
-- 377 pre-defined rules for common US merchants
-
-### Not Yet Implemented
-
-- [ ] Transfer linking (mark two transactions as a transfer pair)
-- [ ] Transaction notes/tags
-- [ ] Spending reports and summaries
-- [ ] Data export (CSV, JSON)
-- [ ] TUI interface (planned with Ratatui)
-- [ ] Multi-currency support
-- [ ] Scheduled/recurring transaction detection
-- [ ] Budget tracking
+Override with `--data-dir <path>` or `PINT_DATA_DIR` environment variable.
 
 ## Security Considerations
 
-While Pint is fully local and its code is auditable, it relies on SimpleFIN to access financial
-institutions information. For a typical US consumer “transaction aggregation” use case, SimpleFIN
-Bridge is secure enough if you already accept the risk profile of Plaid/MX-style aggregation. The
-reasons are straightforward:
+Pint is fully local and its code is auditable. It relies on SimpleFIN to access financial institution data. For a typical US consumer "transaction aggregation" use case, SimpleFIN Bridge is secure enough if you already accept the risk profile of Plaid/MX-style aggregation:
 
-- The protocol and the Bridge’s app-sharing mechanism are designed around read-only access (you’re granting a “window,” not “control”). 
-- They implemented revocable access tokens (apps can be cut off), and they say they alert on new IP access. 
-- They claim no credential storage on their side (delegated to MX) and publish a pentest summary indicating no unresolved critical/high/medium issues at the time of that test. 
+- The protocol is designed around read-only access (you're granting a "window," not "control")
+- Revocable access tokens (apps can be cut off), with alerts on new IP access
+- No credential storage on their side (delegated to MX), with a published pentest summary
 
-It is not secure enough if your requirement is “no third party should ever be able to access or store my financial data” (including transaction history) or if you treat transaction-level data as highly sensitive in the same way you treat authentication secrets because, by design, you are introducing third parties and a tokenized access surface.
+It is not secure enough if your requirement is "no third party should ever access my financial data" or if you treat transaction-level data as highly sensitive, because by design you are introducing third parties and a tokenized access surface.
 
-## SimpleFIN Notes
+### SimpleFIN Notes
 
 - Rate limit: 24 requests per day
 - Date range: 60 days max per request
 - Setup token can only be exchanged once
-- Access URL is stored in the database
 - Backfill makes up to 12 requests (60 days each) to fetch ~2 years of history
-- Backfill stops early if no new transactions are found (institution limit)
+- Backfill stops early if no new transactions are found
 
 ## License
 
