@@ -194,27 +194,24 @@ fn draw_summary(frame: &mut Frame, app: &App, area: Rect) {
         ]),
     ];
 
-    // Add recurring expenses section if there are any
-    if !app.recurring.is_empty() {
+    // Add spending by category section if there are any
+    if !summary.category_spending.is_empty() {
         lines.push(Line::from(""));
         lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled("  Recurring Expenses", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))));
+        lines.push(Line::from(Span::styled("  Spending by Category (Last 90 Days)", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))));
         lines.push(Line::from(Span::styled("  ──────────────────────────────────────────", Style::default().fg(Color::DarkGray))));
 
-        for pattern in &app.recurring {
-            let amount_str = format!("${:.2}", pattern.avg_amount.abs());
-            let merchant_display = if pattern.merchant.len() > 30 {
-                format!("{}...", &pattern.merchant[..27])
+        for (category, amount) in &summary.category_spending {
+            let amount_str = format!("${}", format_amount(*amount, "USD"));
+            let category_display = if category.len() > 28 {
+                format!("{}...", &category[..25])
             } else {
-                pattern.merchant.clone()
+                category.clone()
             };
 
             lines.push(Line::from(vec![
-                Span::styled(format!("  {:<30}", merchant_display), Style::default().fg(Color::Gray)),
-                Span::styled(
-                    format!("{:>12}", amount_str),
-                    Style::default().fg(if pattern.avg_amount < 0.0 { Color::Red } else { Color::Green })
-                ),
+                Span::styled(format!("  {:<28}", category_display), Style::default().fg(Color::Gray)),
+                Span::styled(format!("{:>12}", amount_str), Style::default().fg(Color::Red)),
             ]));
         }
     }
@@ -553,6 +550,13 @@ fn draw_recurring(frame: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn draw_rules(frame: &mut Frame, app: &mut App, area: Rect) {
+    // Show filter info if active
+    let filter_info = if !app.search_query.is_empty() {
+        format!(" [Search: {}] ", app.search_query)
+    } else {
+        String::new()
+    };
+
     // Split area for categories and rules
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -575,7 +579,12 @@ fn draw_rules(frame: &mut Frame, app: &mut App, area: Rect) {
 
     // Rules list
     if app.rules.is_empty() {
-        let msg = Paragraph::new("No rules found. Use 'pint rules import' to load rules.");
+        let msg = if filter_info.is_empty() {
+            "No rules found. Use 'pint rules import' to load rules.".to_string()
+        } else {
+            format!("No rules matching '{}' found.", app.search_query)
+        };
+        let msg = Paragraph::new(msg);
         frame.render_widget(msg, chunks[1]);
         return;
     }
@@ -648,7 +657,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 format!("e:Edit category  l:Learn rule  /:Search  f:Filter{}  q:Quit", filter_status)
             }
             View::Holdings => {
-                "Enter:View details  q:Quit".to_string()
+                "e:Edit  q:Quit".to_string()
             }
             View::Assets => {
                 "a:Add  d:Remove  e:Edit  q:Quit".to_string()
@@ -657,7 +666,8 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 "↑↓:Navigate  q:Quit".to_string()
             }
             View::Rules => {
-                "a:Apply rules  q:Quit".to_string()
+                let filter_status = if !app.search_query.is_empty() { "  c:Clear" } else { "" };
+                format!("e:Edit  a:Apply rules  /:Search{}  q:Quit", filter_status)
             }
         }
     };
@@ -696,6 +706,8 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             (item_count + 5).clamp(8, area.height.saturating_sub(6))
         }
         DialogType::RuleEditor { .. } => 18, // Fixed height for rule editor
+        DialogType::AssetEditor { .. } => 16, // Fixed height for asset editor
+        DialogType::HoldingEditor { .. } => 14, // Fixed height for holding editor
     };
 
     let dialog_x = (area.width.saturating_sub(dialog_width)) / 2;
@@ -953,6 +965,153 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
 
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled("Tab:Next field  ↑↓:Select  Enter:Confirm", Style::default().fg(Color::DarkGray))));
+
+            let paragraph = Paragraph::new(lines);
+            frame.render_widget(paragraph, inner);
+        }
+
+        DialogType::AssetEditor { title, focused_field, selected_type } => {
+            let block = Block::default()
+                .title(format!(" {} ", title))
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Cyan).bg(Color::Black));
+
+            let inner = block.inner(dialog_area);
+            frame.render_widget(block, dialog_area);
+
+            // Styles for focused/unfocused fields
+            let focused_style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+            let unfocused_style = Style::default().fg(Color::Gray);
+            let label_style = Style::default().fg(Color::White);
+
+            // Name field (input1)
+            let name_style = if *focused_field == 0 { focused_style } else { unfocused_style };
+            let (before, after) = dialog.input1.split_at(dialog.cursor1.min(dialog.input1.len()));
+            let name_line = if *focused_field == 0 {
+                Line::from(vec![
+                    Span::styled(before.to_string(), name_style),
+                    Span::styled("█", name_style),
+                    Span::styled(after.to_string(), name_style),
+                ])
+            } else {
+                Line::from(Span::styled(dialog.input1.clone(), name_style))
+            };
+
+            // Type field (selection)
+            let type_style = if *focused_field == 1 { focused_style } else { unfocused_style };
+            let asset_types = ["Real Estate", "Vehicle", "Collectible", "Other"];
+
+            // Value field (input2)
+            let value_style = if *focused_field == 2 { focused_style } else { unfocused_style };
+            let (before2, after2) = dialog.input2.split_at(dialog.cursor2.min(dialog.input2.len()));
+            let value_line = if *focused_field == 2 {
+                Line::from(vec![
+                    Span::styled("$", value_style),
+                    Span::styled(before2.to_string(), value_style),
+                    Span::styled("█", value_style),
+                    Span::styled(after2.to_string(), value_style),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::styled("$", value_style),
+                    Span::styled(dialog.input2.clone(), value_style),
+                ])
+            };
+
+            // Build the dialog content
+            let mut lines = vec![
+                Line::from(Span::styled("Name:", label_style)),
+                name_line,
+                Line::from(""),
+                Line::from(Span::styled("Type:", label_style)),
+            ];
+
+            // Show asset types with selection indicator
+            for (i, type_name) in asset_types.iter().enumerate() {
+                let prefix = if i == *selected_type { "● " } else { "○ " };
+                let style = if i == *selected_type { type_style } else { unfocused_style };
+                lines.push(Line::from(Span::styled(format!("{}{}", prefix, type_name), style)));
+            }
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled("Value:", label_style)));
+            lines.push(value_line);
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled("Tab:Next field  ↑↓:Select  Enter:Confirm", Style::default().fg(Color::DarkGray))));
+
+            let paragraph = Paragraph::new(lines);
+            frame.render_widget(paragraph, inner);
+        }
+
+        DialogType::HoldingEditor { title, focused_field, .. } => {
+            let block = Block::default()
+                .title(format!(" {} ", title))
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Cyan).bg(Color::Black));
+
+            let inner = block.inner(dialog_area);
+            frame.render_widget(block, dialog_area);
+
+            // Styles for focused/unfocused fields
+            let focused_style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+            let unfocused_style = Style::default().fg(Color::Gray);
+            let label_style = Style::default().fg(Color::White);
+
+            // Symbol field (input1)
+            let symbol_style = if *focused_field == 0 { focused_style } else { unfocused_style };
+            let (before1, after1) = dialog.input1.split_at(dialog.cursor1.min(dialog.input1.len()));
+            let symbol_line = if *focused_field == 0 {
+                Line::from(vec![
+                    Span::styled(before1.to_string(), symbol_style),
+                    Span::styled("█", symbol_style),
+                    Span::styled(after1.to_string(), symbol_style),
+                ])
+            } else {
+                Line::from(Span::styled(dialog.input1.clone(), symbol_style))
+            };
+
+            // Shares field (input2)
+            let shares_style = if *focused_field == 1 { focused_style } else { unfocused_style };
+            let (before2, after2) = dialog.input2.split_at(dialog.cursor2.min(dialog.input2.len()));
+            let shares_line = if *focused_field == 1 {
+                Line::from(vec![
+                    Span::styled(before2.to_string(), shares_style),
+                    Span::styled("█", shares_style),
+                    Span::styled(after2.to_string(), shares_style),
+                ])
+            } else {
+                Line::from(Span::styled(dialog.input2.clone(), shares_style))
+            };
+
+            // Price field (input3)
+            let price_style = if *focused_field == 2 { focused_style } else { unfocused_style };
+            let (before3, after3) = dialog.input3.split_at(dialog.cursor3.min(dialog.input3.len()));
+            let price_line = if *focused_field == 2 {
+                Line::from(vec![
+                    Span::styled("$", price_style),
+                    Span::styled(before3.to_string(), price_style),
+                    Span::styled("█", price_style),
+                    Span::styled(after3.to_string(), price_style),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::styled("$", price_style),
+                    Span::styled(dialog.input3.clone(), price_style),
+                ])
+            };
+
+            let lines = vec![
+                Line::from(Span::styled("Symbol (e.g., AAPL, BTC-USD):", label_style)),
+                symbol_line,
+                Line::from(""),
+                Line::from(Span::styled("Shares:", label_style)),
+                shares_line,
+                Line::from(""),
+                Line::from(Span::styled("Price:", label_style)),
+                price_line,
+                Line::from(""),
+                Line::from(Span::styled("Tab:Next field  Enter:Confirm  Esc:Cancel", Style::default().fg(Color::DarkGray))),
+            ];
 
             let paragraph = Paragraph::new(lines);
             frame.render_widget(paragraph, inner);

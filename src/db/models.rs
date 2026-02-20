@@ -520,17 +520,67 @@ impl Asset {
         self.cost_basis.map(|cents| cents as f64 / 100.0)
     }
 
-    /// Find all assets, ordered by value descending.
+    /// Find all assets, ordered by type then value descending.
     pub fn find_all(conn: &Connection) -> Result<Vec<Asset>> {
         let mut stmt = conn.prepare(
             "SELECT id, name, asset_type, description, value, cost_basis, currency, acquired_date, metadata, created_at, updated_at
              FROM assets
-             ORDER BY value DESC NULLS LAST"
+             ORDER BY asset_type, value DESC NULLS LAST"
         )?;
         let assets = stmt
             .query_map([], Asset::from_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(assets)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RewardPoints {
+    pub id: i64,
+    pub program: String,
+    pub points: i64,
+    pub note: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+impl RewardPoints {
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get("id")?,
+            program: row.get("program")?,
+            points: row.get("points")?,
+            note: row.get("note")?,
+            created_at: row.get("created_at")?,
+            updated_at: row.get("updated_at")?,
+        })
+    }
+
+    /// Find all reward points programs, ordered by program name.
+    pub fn find_all(conn: &Connection) -> Result<Vec<RewardPoints>> {
+        let mut stmt = conn.prepare(
+            "SELECT id, program, points, note, created_at, updated_at
+             FROM rewards_points
+             ORDER BY program"
+        )?;
+        let points = stmt
+            .query_map([], RewardPoints::from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(points)
+    }
+
+    /// Find a reward points program by name (case-insensitive).
+    pub fn find_by_program(conn: &Connection, program: &str) -> Result<Option<RewardPoints>> {
+        let result = conn
+            .query_row(
+                "SELECT id, program, points, note, created_at, updated_at
+                 FROM rewards_points
+                 WHERE LOWER(program) = LOWER(?1)",
+                [program],
+                RewardPoints::from_row,
+            )
+            .optional()?;
+        Ok(result)
     }
 }
 

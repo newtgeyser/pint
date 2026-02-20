@@ -207,19 +207,21 @@ pub fn find_category_for_description_with_rules(
 fn merchant_rule_matches(description_upper: &str, pattern_upper: &str, match_mode: MatchMode) -> bool {
     match match_mode {
         MatchMode::Substring => description_upper.contains(pattern_upper),
-        MatchMode::Token => description_upper
-            .match_indices(pattern_upper)
-            .any(|(idx, _)| is_token_boundary_match(description_upper, idx, pattern_upper.len())),
+        MatchMode::Token => is_token_match(description_upper, pattern_upper),
     }
 }
 
-fn is_token_boundary_match(haystack: &str, start: usize, pat_len: usize) -> bool {
-    let before = haystack[..start].chars().last();
-    let after = haystack[start + pat_len..].chars().next();
-
-    let ok_before = before.is_none_or(|c| !c.is_ascii_alphanumeric());
-    let ok_after = after.is_none_or(|c| !c.is_ascii_alphanumeric());
-    ok_before && ok_after
+/// Check if pattern matches as a token (word boundary on both sides) in the text.
+/// Both arguments should be in the same case (uppercase recommended).
+pub fn is_token_match(text: &str, pattern: &str) -> bool {
+    text.match_indices(pattern)
+        .any(|(idx, _)| {
+            let before = text[..idx].chars().last();
+            let after = text[idx + pattern.len()..].chars().next();
+            let ok_before = before.is_none_or(|c| !c.is_ascii_alphanumeric());
+            let ok_after = after.is_none_or(|c| !c.is_ascii_alphanumeric());
+            ok_before && ok_after
+        })
 }
 
 pub fn categorize_transaction(conn: &Connection, tx_id: &str, category_id: i64) -> Result<bool> {
@@ -258,5 +260,17 @@ mod tests {
 
         let s = "IRS TREAS 310 TAX REF";
         assert!(merchant_rule_matches(s, "IRS", MatchMode::Token));
+    }
+
+    #[test]
+    fn token_match_requires_end_boundary() {
+        // "MOBIL" should NOT match "MOBILE" as a token
+        let s = "CAPITAL ONE MOBILE PMT";
+        assert!(merchant_rule_matches(s, "MOBIL", MatchMode::Substring));
+        assert!(!merchant_rule_matches(s, "MOBIL", MatchMode::Token));
+
+        // But should match "MOBIL" exactly
+        let s = "EXXON MOBIL PAYMENT";
+        assert!(merchant_rule_matches(s, "MOBIL", MatchMode::Token));
     }
 }

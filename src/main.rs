@@ -107,6 +107,12 @@ enum Commands {
         action: Option<RulesAction>,
     },
 
+    /// Manage reward points programs
+    Points {
+        #[command(subcommand)]
+        action: Option<PointsAction>,
+    },
+
     /// Show detected recurring transactions
     Recurring,
 }
@@ -202,6 +208,8 @@ enum HoldingsAction {
         #[arg(short, long)]
         account: String,
     },
+    /// Update prices for holdings in manual accounts from Yahoo Finance
+    UpdatePrices,
 }
 
 #[derive(Subcommand)]
@@ -270,6 +278,36 @@ enum RulesAction {
         /// Match mode: substring (default) or token
         #[arg(long, default_value = "substring")]
         r#match: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum PointsAction {
+    /// Set points for a program (creates or updates)
+    Set {
+        /// Program name (e.g., "Chase Sapphire Reserve")
+        program: String,
+        /// Number of points
+        points: i64,
+        /// Optional note (e.g., "Ultimate Rewards")
+        #[arg(short, long)]
+        note: Option<String>,
+    },
+    /// Add a new program
+    Add {
+        /// Program name
+        program: String,
+        /// Initial points balance
+        #[arg(default_value = "0")]
+        points: i64,
+        /// Optional note
+        #[arg(short, long)]
+        note: Option<String>,
+    },
+    /// Remove a program
+    Remove {
+        /// Program name
+        program: String,
     },
 }
 
@@ -383,6 +421,9 @@ fn main() -> Result<()> {
             HoldingsAction::Import { file, account } => {
                 commands::import_holdings::run(&file, &account)
             }
+            HoldingsAction::UpdatePrices => {
+                commands::prices::run()
+            }
         },
 
         Commands::Assets { action } => match action {
@@ -425,6 +466,19 @@ fn main() -> Result<()> {
                 pattern,
                 r#match,
             }) => commands::categorize::run_learn(&tx_id, &category, &pattern, &r#match),
+        },
+
+        Commands::Points { action } => match action {
+            None => commands::points::run(),
+            Some(PointsAction::Set { program, points, note }) => {
+                commands::points::set(&program, points, note.as_deref())
+            }
+            Some(PointsAction::Add { program, points, note }) => {
+                commands::points::add(&program, points, note.as_deref())
+            }
+            Some(PointsAction::Remove { program }) => {
+                commands::points::remove(&program)
+            }
         },
 
         Commands::Recurring => commands::recurring::run(),

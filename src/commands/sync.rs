@@ -3,7 +3,7 @@ use chrono::{Duration, NaiveDate, TimeZone, Utc};
 use rusqlite::Connection;
 
 use crate::{db, simplefin::{SimpleFin, AccountSet}};
-use super::rules;
+use super::{prices, rules};
 
 use super::setup::get_access_url;
 
@@ -47,6 +47,7 @@ pub fn run(days: u32) -> Result<()> {
         }
     }
     auto_categorize(&conn)?;
+    update_manual_prices(&conn)?;
     Ok(())
 }
 
@@ -137,6 +138,7 @@ pub fn run_backfill(from: Option<NaiveDate>) -> Result<()> {
     );
 
     auto_categorize(&conn)?;
+    update_manual_prices(&conn)?;
     Ok(())
 }
 
@@ -297,6 +299,14 @@ fn auto_categorize(conn: &Connection) -> Result<()> {
     let categorized = rules::auto_categorize_all(conn)?;
     if categorized > 0 {
         println!("Auto-categorized {} transactions", categorized);
+    }
+    Ok(())
+}
+
+fn update_manual_prices(conn: &Connection) -> Result<()> {
+    let stats = prices::run_with_conn(conn)?;
+    if stats.updated > 0 {
+        println!("Updated {} holding prices from Yahoo Finance", stats.updated);
     }
     Ok(())
 }

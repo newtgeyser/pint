@@ -107,6 +107,15 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS rewards_points (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            program TEXT NOT NULL UNIQUE,
+            points INTEGER NOT NULL DEFAULT 0,
+            note TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
         ",
     )?;
 
@@ -275,6 +284,20 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             currency TEXT DEFAULT 'USD',
             acquired_date INTEGER,
             metadata TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        ",
+    )?;
+
+    // Create rewards_points table if it doesn't exist (for existing databases)
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS rewards_points (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            program TEXT NOT NULL UNIQUE,
+            points INTEGER NOT NULL DEFAULT 0,
+            note TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );

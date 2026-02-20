@@ -99,6 +99,21 @@ pub enum DialogType {
         /// Selected category index
         selected_category: usize,
     },
+    /// Asset editor dialog (name + type + value)
+    AssetEditor {
+        title: String,
+        /// 0 = name, 1 = type, 2 = value
+        focused_field: usize,
+        /// Selected asset type index (0=real_estate, 1=vehicle, 2=collectible, 3=other)
+        selected_type: usize,
+    },
+    /// Holding editor dialog (symbol + shares + price)
+    HoldingEditor {
+        title: String,
+        holding_id: String,
+        /// 0 = symbol, 1 = shares, 2 = price
+        focused_field: usize,
+    },
 }
 
 /// Dialog state
@@ -106,11 +121,14 @@ pub struct Dialog {
     pub dialog_type: DialogType,
     pub input1: String,
     pub input2: String,
+    pub input3: String,
     pub action: DialogAction,
     /// Cursor position within input1
     pub cursor1: usize,
     /// Cursor position within input2
     pub cursor2: usize,
+    /// Cursor position within input3
+    pub cursor3: usize,
 }
 
 /// What action to perform when dialog is confirmed
@@ -123,7 +141,10 @@ pub enum DialogAction {
     FilterByAccount,
     CreateRule { tx_id: String },
     EditRule { tx_id: String, rule_pattern: String },
+    EditRuleFromList { rule_pattern: String },
     CategorizeTransaction { tx_id: String },
+    AddAsset,
+    EditHolding { holding_id: String },
 }
 
 /// Summary data aggregated by account type
@@ -135,6 +156,7 @@ pub struct SummaryData {
     pub assets: i64,      // manual assets
     pub credit: i64,      // credit cards (negative)
     pub net_worth: i64,   // total
+    pub category_spending: Vec<(String, i64)>, // (category_name, total_cents) - top 8 by spending
 }
 
 pub struct App {
@@ -254,6 +276,9 @@ impl App {
 
         let net_worth = cash + brokerage + retirement + assets_total + credit;
 
+        // Load category spending for last 3 months
+        let category_spending = self.load_category_spending()?;
+
         self.summary = SummaryData {
             cash,
             brokerage,
@@ -261,12 +286,51 @@ impl App {
             assets: assets_total,
             credit,
             net_worth,
+            category_spending,
         };
 
-        // Also load recurring for display in summary
-        self.recurring = RecurringPattern::detect(&self.conn)?;
-
         Ok(())
+    }
+
+    /// Load spending by category for the last 3 months, sorted by amount (highest first), limited to 8
+    /// Only includes checking, savings, and credit accounts; excludes transfers
+    fn load_category_spending(&self) -> Result<Vec<(String, i64)>> {
+        use chrono::{Duration, Utc};
+
+        // Calculate timestamp for 3 months ago
+        let three_months_ago = Utc::now() - Duration::days(90);
+        let cutoff = three_months_ago.timestamp();
+
+        // Query expenses (amount < 0) in the last 3 months grouped by category
+        // Only from checking, savings, and credit accounts; exclude transfers
+        let mut stmt = self.conn.prepare(
+            "SELECT c.name, SUM(t.amount)
+             FROM transactions t
+             JOIN accounts a ON t.account_id = a.id
+             LEFT JOIN categories c ON t.category_id = c.id
+             WHERE t.amount < 0
+               AND t.posted >= ?1
+               AND t.pending = 0
+               AND a.account_type IN ('checking', 'savings', 'credit')
+               AND (c.name IS NULL OR LOWER(c.name) != 'transfers')
+             GROUP BY c.name
+             ORDER BY SUM(t.amount) ASC"
+        )?;
+
+        let mut spending: Vec<(String, i64)> = stmt
+            .query_map([cutoff], |row| {
+                let name: Option<String> = row.get(0)?;
+                let total: i64 = row.get(1)?;
+                Ok((name.unwrap_or_else(|| "Uncategorized".to_string()), total.abs()))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        // Sort by spending amount (highest first) and take top 8
+        spending.sort_by(|a, b| b.1.cmp(&a.1));
+        spending.truncate(8);
+
+        Ok(spending)
     }
 
     fn load_accounts(&mut self) -> Result<()> {
@@ -344,6 +408,15 @@ impl App {
     fn load_rules(&mut self) -> Result<()> {
         self.categories = Category::find_all(&self.conn)?;
         self.rules = RuleRow::find_all(&self.conn)?;
+
+        // Apply search filter (UI-specific, in-memory)
+        if !self.search_query.is_empty() {
+            let query_lower = self.search_query.to_lowercase();
+            self.rules.retain(|r| {
+                r.pattern.to_lowercase().contains(&query_lower)
+                    || r.category.to_lowercase().contains(&query_lower)
+            });
+        }
 
         if !self.rules.is_empty() {
             let selected = self.rules_state.selected().unwrap_or(0);
@@ -520,9 +593,11 @@ impl App {
             dialog_type,
             input1: prefill,
             input2: String::new(),
+            input3: String::new(),
             action,
             cursor1,
             cursor2: 0,
+            cursor3: 0,
         });
     }
 
@@ -558,6 +633,34 @@ impl App {
                     if *focused_field == 0 {
                         dialog.input1.insert(dialog.cursor1, c);
                         dialog.cursor1 += 1;
+                    }
+                }
+                DialogType::AssetEditor { focused_field, .. } => {
+                    // Field 0 = name, Field 1 = type (no input), Field 2 = value
+                    if *focused_field == 0 {
+                        dialog.input1.insert(dialog.cursor1, c);
+                        dialog.cursor1 += 1;
+                    } else if *focused_field == 2 {
+                        dialog.input2.insert(dialog.cursor2, c);
+                        dialog.cursor2 += 1;
+                    }
+                }
+                DialogType::HoldingEditor { focused_field, .. } => {
+                    // Field 0 = symbol, Field 1 = shares, Field 2 = price
+                    match *focused_field {
+                        0 => {
+                            dialog.input1.insert(dialog.cursor1, c);
+                            dialog.cursor1 += 1;
+                        }
+                        1 => {
+                            dialog.input2.insert(dialog.cursor2, c);
+                            dialog.cursor2 += 1;
+                        }
+                        2 => {
+                            dialog.input3.insert(dialog.cursor3, c);
+                            dialog.cursor3 += 1;
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -597,6 +700,32 @@ impl App {
                         dialog.input1.remove(dialog.cursor1);
                     }
                 }
+                DialogType::AssetEditor { focused_field, .. } => {
+                    if *focused_field == 0 && dialog.cursor1 > 0 {
+                        dialog.cursor1 -= 1;
+                        dialog.input1.remove(dialog.cursor1);
+                    } else if *focused_field == 2 && dialog.cursor2 > 0 {
+                        dialog.cursor2 -= 1;
+                        dialog.input2.remove(dialog.cursor2);
+                    }
+                }
+                DialogType::HoldingEditor { focused_field, .. } => {
+                    match *focused_field {
+                        0 if dialog.cursor1 > 0 => {
+                            dialog.cursor1 -= 1;
+                            dialog.input1.remove(dialog.cursor1);
+                        }
+                        1 if dialog.cursor2 > 0 => {
+                            dialog.cursor2 -= 1;
+                            dialog.input2.remove(dialog.cursor2);
+                        }
+                        2 if dialog.cursor3 > 0 => {
+                            dialog.cursor3 -= 1;
+                            dialog.input3.remove(dialog.cursor3);
+                        }
+                        _ => {}
+                    }
+                }
             }
         }
     }
@@ -622,6 +751,21 @@ impl App {
                         dialog.cursor1 -= 1;
                     }
                 }
+                DialogType::AssetEditor { focused_field, .. } => {
+                    if *focused_field == 0 && dialog.cursor1 > 0 {
+                        dialog.cursor1 -= 1;
+                    } else if *focused_field == 2 && dialog.cursor2 > 0 {
+                        dialog.cursor2 -= 1;
+                    }
+                }
+                DialogType::HoldingEditor { focused_field, .. } => {
+                    match *focused_field {
+                        0 if dialog.cursor1 > 0 => dialog.cursor1 -= 1,
+                        1 if dialog.cursor2 > 0 => dialog.cursor2 -= 1,
+                        2 if dialog.cursor3 > 0 => dialog.cursor3 -= 1,
+                        _ => {}
+                    }
+                }
             }
         }
     }
@@ -645,6 +789,21 @@ impl App {
                 DialogType::RuleEditor { focused_field, .. } => {
                     if *focused_field == 0 && dialog.cursor1 < dialog.input1.len() {
                         dialog.cursor1 += 1;
+                    }
+                }
+                DialogType::AssetEditor { focused_field, .. } => {
+                    if *focused_field == 0 && dialog.cursor1 < dialog.input1.len() {
+                        dialog.cursor1 += 1;
+                    } else if *focused_field == 2 && dialog.cursor2 < dialog.input2.len() {
+                        dialog.cursor2 += 1;
+                    }
+                }
+                DialogType::HoldingEditor { focused_field, .. } => {
+                    match *focused_field {
+                        0 if dialog.cursor1 < dialog.input1.len() => dialog.cursor1 += 1,
+                        1 if dialog.cursor2 < dialog.input2.len() => dialog.cursor2 += 1,
+                        2 if dialog.cursor3 < dialog.input3.len() => dialog.cursor3 += 1,
+                        _ => {}
                     }
                 }
             }
@@ -674,6 +833,12 @@ impl App {
                             }
                         }
                         _ => {}
+                    }
+                }
+                DialogType::AssetEditor { focused_field, selected_type, .. } => {
+                    // Type selection (field 1): 4 types available
+                    if *focused_field == 1 && *selected_type > 0 {
+                        *selected_type -= 1;
                     }
                 }
                 _ => {}
@@ -713,6 +878,12 @@ impl App {
                         _ => {}
                     }
                 }
+                DialogType::AssetEditor { focused_field, selected_type, .. } => {
+                    // Type selection (field 1): 4 types available (indices 0-3)
+                    if *focused_field == 1 && *selected_type < 3 {
+                        *selected_type += 1;
+                    }
+                }
                 _ => {}
             }
         }
@@ -725,6 +896,12 @@ impl App {
                     *focused = (*focused + 1) % 2;
                 }
                 DialogType::RuleEditor { focused_field, .. } => {
+                    *focused_field = (*focused_field + 1) % 3;
+                }
+                DialogType::AssetEditor { focused_field, .. } => {
+                    *focused_field = (*focused_field + 1) % 3;
+                }
+                DialogType::HoldingEditor { focused_field, .. } => {
                     *focused_field = (*focused_field + 1) % 3;
                 }
                 _ => {}
@@ -776,13 +953,13 @@ impl App {
                         self.execute_create_rule(&tx_id, &dialog.input1, match_str, *category_id, category_name)?;
                     }
                 }
-                DialogAction::EditRule { tx_id, rule_pattern } => {
+                DialogAction::EditRule { rule_pattern, .. } | DialogAction::EditRuleFromList { rule_pattern } => {
                     if let DialogType::RuleEditor { match_mode, categories, selected_category, .. } = &dialog.dialog_type
                         && !dialog.input1.is_empty()
                         && let Some((category_id, category_name)) = categories.get(*selected_category)
                     {
                         let match_str = if *match_mode == 0 { "substring" } else { "token" };
-                        self.execute_edit_rule(&tx_id, &rule_pattern, &dialog.input1, match_str, *category_id, category_name)?;
+                        self.execute_edit_rule(&rule_pattern, &dialog.input1, match_str, *category_id, category_name)?;
                     }
                 }
                 DialogAction::CategorizeTransaction { tx_id } => {
@@ -800,6 +977,25 @@ impl App {
                             self.execute_categorize_transaction(&tx_id, category_id, category_name)?;
                         }
                     }
+                }
+                DialogAction::AddAsset => {
+                    if let DialogType::AssetEditor { selected_type, .. } = &dialog.dialog_type {
+                        // input1 = name, input2 = value
+                        if !dialog.input1.is_empty() && !dialog.input2.is_empty() {
+                            let asset_types = ["real_estate", "vehicle", "collectible", "other"];
+                            let asset_type = asset_types.get(*selected_type).unwrap_or(&"other");
+                            self.execute_add_asset(&dialog.input1, asset_type, &dialog.input2)?;
+                        }
+                    }
+                }
+                DialogAction::EditHolding { holding_id } => {
+                    // input1 = symbol, input2 = shares, input3 = price
+                    self.execute_edit_holding(
+                        &holding_id,
+                        if dialog.input1.is_empty() { None } else { Some(&dialog.input1) },
+                        if dialog.input2.is_empty() { None } else { Some(&dialog.input2) },
+                        if dialog.input3.is_empty() { None } else { Some(&dialog.input3) },
+                    )?;
                 }
             }
         }
@@ -894,6 +1090,98 @@ impl App {
         Ok(())
     }
 
+    // Asset actions
+
+    pub fn show_add_asset_dialog(&mut self) {
+        self.dialog = Some(Dialog {
+            dialog_type: DialogType::AssetEditor {
+                title: "Add Asset".to_string(),
+                focused_field: 0,
+                selected_type: 0, // real_estate
+            },
+            input1: String::new(),  // name
+            input2: String::new(),  // value
+            input3: String::new(),
+            action: DialogAction::AddAsset,
+            cursor1: 0,
+            cursor2: 0,
+            cursor3: 0,
+        });
+    }
+
+    fn execute_add_asset(&mut self, name: &str, asset_type: &str, value_str: &str) -> Result<()> {
+        // Parse value as dollars
+        let value: f64 = value_str.parse().map_err(|_| anyhow::anyhow!("Invalid value"))?;
+
+        crate::commands::assets::add(name, asset_type, value, None, None, None)?;
+        self.load_assets()?;
+        self.status = Some(format!("Added asset '{}'", name));
+        Ok(())
+    }
+
+    // Holding actions
+
+    pub fn show_edit_holding_dialog(&mut self) {
+        let selected = self.holdings_state.selected().unwrap_or(0);
+        if let Some(holding) = self.holdings.get(selected) {
+            let holding_id = holding.id.clone();
+            let symbol = holding.symbol.clone().unwrap_or_default();
+            let shares = holding.shares.clone();
+            let price = holding.price_dollars()
+                .map(|p| format!("{:.2}", p))
+                .unwrap_or_default();
+
+            self.dialog = Some(Dialog {
+                dialog_type: DialogType::HoldingEditor {
+                    title: "Edit Holding".to_string(),
+                    holding_id: holding_id.clone(),
+                    focused_field: 0,
+                },
+                input1: symbol,
+                input2: shares,
+                input3: price,
+                action: DialogAction::EditHolding { holding_id },
+                cursor1: 0,
+                cursor2: 0,
+                cursor3: 0,
+            });
+            // Move cursors to end of each input
+            if let Some(ref mut d) = self.dialog {
+                d.cursor1 = d.input1.len();
+                d.cursor2 = d.input2.len();
+                d.cursor3 = d.input3.len();
+            }
+        }
+    }
+
+    fn execute_edit_holding(
+        &mut self,
+        holding_id: &str,
+        symbol: Option<&str>,
+        shares: Option<&str>,
+        price_str: Option<&str>,
+    ) -> Result<()> {
+        let price = price_str
+            .map(|s| s.parse::<f64>())
+            .transpose()
+            .map_err(|_| anyhow::anyhow!("Invalid price"))?;
+
+        crate::commands::holdings::update(holding_id, shares, price, None)?;
+
+        // Update symbol if changed
+        if let Some(sym) = symbol {
+            let now = chrono::Utc::now().timestamp();
+            self.conn.execute(
+                "UPDATE holdings SET symbol = ?1, updated_at = ?2 WHERE id = ?3",
+                rusqlite::params![sym.to_uppercase(), now, holding_id],
+            )?;
+        }
+
+        self.load_holdings()?;
+        self.status = Some("Holding updated".to_string());
+        Ok(())
+    }
+
     // Transaction filter actions
 
     pub fn show_filter_account_dialog(&mut self) {
@@ -981,86 +1269,37 @@ impl App {
             let description = tx.description.clone();
             let category = tx.category.clone();
 
-            let categories = match Category::find_all_for_select(&self.conn) {
-                Ok(cats) => cats,
-                Err(_) => {
-                    self.status = Some("Failed to load categories".to_string());
-                    return;
-                }
-            };
-
-            if categories.is_empty() {
-                self.status = Some("No categories defined. Run 'pint setup' first.".to_string());
-                return;
-            }
-
-            // Also load rules for finding existing rules
+            // Load rules for finding existing rules
             let _ = self.load_rules();
 
             // Check if there's an existing rule for this transaction's category
-            let (action, title, pattern, match_mode, selected_category) = if let Some(ref cat_name) = category {
+            if let Some(ref cat_name) = category {
                 // Find if there's a rule that matches this transaction
-                if let Some(rule) = self.find_rule_for_transaction(&description) {
+                if let Some(rule) = self.find_rule_for_transaction(&description).cloned() {
                     // Edit existing rule
-                    let match_mode = if rule.match_mode == "token" { 1 } else { 0 };
-                    let selected_cat = categories.iter().position(|(_, name)| name == cat_name).unwrap_or(0);
-                    (
-                        DialogAction::EditRule { tx_id, rule_pattern: rule.pattern.clone() },
-                        "Edit Rule".to_string(),
-                        rule.pattern.clone(),
-                        match_mode,
-                        selected_cat,
-                    )
+                    let action = DialogAction::EditRule { tx_id, rule_pattern: rule.pattern.clone() };
+                    self.show_rule_editor(&rule.pattern, &rule.match_mode, cat_name, "Edit Rule", action);
                 } else {
                     // Create new rule (transaction categorized manually perhaps)
-                    let selected_cat = categories.iter().position(|(_, name)| name == cat_name).unwrap_or(0);
-                    (
-                        DialogAction::CreateRule { tx_id },
-                        "Create Rule".to_string(),
-                        description.clone(),
-                        0,
-                        selected_cat,
-                    )
+                    let action = DialogAction::CreateRule { tx_id };
+                    self.show_rule_editor(&description, "substring", cat_name, "Create Rule", action);
                 }
             } else {
                 // Uncategorized - create new rule
-                (
-                    DialogAction::CreateRule { tx_id },
-                    "Create Rule".to_string(),
-                    description.clone(),
-                    0,
-                    0,
-                )
-            };
-
-            let cursor1 = pattern.len();
-            self.dialog = Some(Dialog {
-                dialog_type: DialogType::RuleEditor {
-                    title,
-                    focused_field: 0,
-                    match_mode,
-                    categories,
-                    selected_category,
-                },
-                input1: pattern,
-                input2: String::new(),
-                action,
-                cursor1,
-                cursor2: 0,
-            });
+                let action = DialogAction::CreateRule { tx_id };
+                self.show_rule_editor(&description, "substring", "", "Create Rule", action);
+            }
         }
     }
 
     fn find_rule_for_transaction(&self, description: &str) -> Option<&RuleRow> {
-        let desc_lower = description.to_lowercase();
+        let desc_upper = description.to_uppercase();
         self.rules.iter().find(|rule| {
-            let pattern_lower = rule.pattern.to_lowercase();
+            let pattern_upper = rule.pattern.to_uppercase();
             if rule.match_mode == "token" {
-                // Token match: check if any word starts with the pattern
-                desc_lower.split_whitespace().any(|word| word.starts_with(&pattern_lower))
+                crate::db::is_token_match(&desc_upper, &pattern_upper)
             } else {
-                // Substring match
-                desc_lower.contains(&pattern_lower)
+                desc_upper.contains(&pattern_upper)
             }
         })
     }
@@ -1077,7 +1316,7 @@ impl App {
         Ok(())
     }
 
-    fn execute_edit_rule(&mut self, _tx_id: &str, old_pattern: &str, new_pattern: &str, match_mode: &str, category_id: i64, category_name: &str) -> Result<()> {
+    fn execute_edit_rule(&mut self, old_pattern: &str, new_pattern: &str, match_mode: &str, category_id: i64, category_name: &str) -> Result<()> {
         MerchantRule::delete_by_pattern(&self.conn, old_pattern)?;
         MerchantRule::upsert(&self.conn, new_pattern, match_mode, category_id)?;
         let count = MerchantRule::apply_to_transactions(&self.conn, new_pattern, match_mode, category_id)?;
@@ -1088,6 +1327,54 @@ impl App {
 
         self.status = Some(format!("Rule updated: '{}' → {} ({} transactions)", new_pattern, category_name, count));
         Ok(())
+    }
+
+    /// Show edit dialog for a rule selected in the Rules view
+    pub fn show_edit_rule_from_list(&mut self) {
+        let selected = self.rules_state.selected().unwrap_or(0);
+        if let Some(rule) = self.rules.get(selected).cloned() {
+            let action = DialogAction::EditRuleFromList { rule_pattern: rule.pattern.clone() };
+            self.show_rule_editor(&rule.pattern, &rule.match_mode, &rule.category, "Edit Rule", action);
+        }
+    }
+
+    /// Helper to show the rule editor dialog with given parameters
+    fn show_rule_editor(&mut self, pattern: &str, match_mode: &str, category_name: &str, title: &str, action: DialogAction) {
+        let categories = match Category::find_all_for_select(&self.conn) {
+            Ok(cats) => cats,
+            Err(_) => {
+                self.status = Some("Failed to load categories".to_string());
+                return;
+            }
+        };
+
+        if categories.is_empty() {
+            self.status = Some("No categories defined.".to_string());
+            return;
+        }
+
+        let match_mode_idx = if match_mode == "token" { 1 } else { 0 };
+        let selected_category = categories.iter()
+            .position(|(_, name)| name == category_name)
+            .unwrap_or(0);
+
+        let cursor1 = pattern.len();
+        self.dialog = Some(Dialog {
+            dialog_type: DialogType::RuleEditor {
+                title: title.to_string(),
+                focused_field: 0,
+                match_mode: match_mode_idx,
+                categories,
+                selected_category,
+            },
+            input1: pattern.to_string(),
+            input2: String::new(),
+            input3: String::new(),
+            action,
+            cursor1,
+            cursor2: 0,
+            cursor3: 0,
+        });
     }
 
     // Sync actions
@@ -1101,9 +1388,11 @@ impl App {
             },
             input1: String::new(),
             input2: String::new(),
+            input3: String::new(),
             action: DialogAction::AddAccount, // unused for Info dialog
             cursor1: 0,
             cursor2: 0,
+            cursor3: 0,
         });
         self.pending_sync = true;
     }

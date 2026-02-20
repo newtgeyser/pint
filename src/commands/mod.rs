@@ -4,6 +4,8 @@ pub mod categories;
 pub mod categorize;
 pub mod holdings;
 pub mod import_holdings;
+pub mod points;
+pub mod prices;
 pub mod recurring;
 pub mod rules;
 pub mod setup;

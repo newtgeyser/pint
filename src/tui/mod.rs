@@ -172,17 +172,15 @@ fn handle_view_keys(app: &mut App, key: KeyCode) -> Result<()> {
             KeyCode::Char('e') => app.show_categorize_dialog(),
             _ => {}
         },
-        View::Holdings => {
-            // Holdings-specific keys can be added here
+        View::Holdings => match key {
+            KeyCode::Char('e') | KeyCode::Enter => app.show_edit_holding_dialog(),
+            _ => {}
         }
         View::Recurring => {
             // Recurring-specific keys can be added here
         }
         View::Assets => match key {
-            // TODO: implement asset actions
-            KeyCode::Char('a') => {
-                app.status = Some("Asset add not yet implemented in TUI".to_string());
-            }
+            KeyCode::Char('a') => app.show_add_asset_dialog(),
             KeyCode::Char('d') => {
                 app.status = Some("Asset delete not yet implemented in TUI".to_string());
             }
@@ -191,10 +189,19 @@ fn handle_view_keys(app: &mut App, key: KeyCode) -> Result<()> {
             }
             _ => {}
         },
-        View::Rules => if let KeyCode::Char('a') = key {
-            crate::commands::categorize::run_auto_quiet(true)?;
-            app.load_data()?;
-            app.status = Some("Rules applied to transactions".to_string());
+        View::Rules => match key {
+            KeyCode::Char('a') => {
+                crate::commands::categorize::run_auto_quiet(true)?;
+                app.load_data()?;
+                app.status = Some("Rules applied to transactions".to_string());
+            }
+            KeyCode::Char('e') | KeyCode::Enter => {
+                app.show_edit_rule_from_list();
+            }
+            KeyCode::Char('c') => {
+                app.clear_filters()?;
+            }
+            _ => {}
         },
     }
     Ok(())
