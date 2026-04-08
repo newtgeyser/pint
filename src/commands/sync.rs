@@ -60,7 +60,8 @@ pub fn run_with_conn(conn: &Connection, days: u32) -> Result<SyncStats> {
     let start = now - Duration::days(days as i64);
 
     let account_set = client.fetch_accounts(Some(start.timestamp()), Some(now.timestamp()))?;
-    let warnings = account_set.errors.clone();
+    let mut warnings = account_set.errors.clone();
+    warnings.extend(check_missing_accounts(conn, &account_set)?);
     let mut stats = import_accounts(conn, &account_set)?;
     stats.warnings = warnings;
 
@@ -293,6 +294,40 @@ fn import_holding(
         ],
     )?;
     Ok(())
+}
+
+/// Warn about accounts that exist in the database but were not returned by SimpleFIN.
+/// This catches silently disconnected bank connections.
+fn check_missing_accounts(conn: &Connection, account_set: &AccountSet) -> Result<Vec<String>> {
+    let returned_ids: std::collections::HashSet<&str> = account_set
+        .accounts
+        .iter()
+        .map(|a| a.id.as_str())
+        .collect();
+
+    let mut stmt = conn.prepare(
+        "SELECT id, COALESCE(nickname, name) as display_name, institution
+         FROM accounts WHERE manual = 0"
+    )?;
+    let missing: Vec<String> = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?
+        .filter_map(|r| r.ok())
+        .filter(|(id, _, _)| !returned_ids.contains(id.as_str()))
+        .map(|(_, name, institution)| {
+            match institution {
+                Some(inst) => format!("Account not returned by SimpleFIN: {} ({}). Connection may need attention.", name, inst),
+                None => format!("Account not returned by SimpleFIN: {}. Connection may need attention.", name),
+            }
+        })
+        .collect();
+
+    Ok(missing)
 }
 
 fn auto_categorize(conn: &Connection) -> Result<()> {
