@@ -11,6 +11,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             reimburser_id INTEGER NOT NULL REFERENCES reimbursers(id) ON DELETE RESTRICT,
             amount INTEGER NOT NULL CHECK (amount > 0),
             received_at INTEGER NOT NULL,
+            source_transaction_id TEXT UNIQUE REFERENCES transactions(id) ON DELETE RESTRICT,
             reference TEXT,
             note TEXT,
             created_at INTEGER NOT NULL
@@ -37,6 +38,7 @@ pub struct ReimbursementPayment {
     pub reimburser_id: i64,
     pub amount: i64,
     pub received_at: i64,
+    pub source_transaction_id: Option<String>,
     pub reference: Option<String>,
     pub note: Option<String>,
 }
@@ -55,6 +57,7 @@ impl ReimbursementPayment {
         reimburser_id: i64,
         amount: i64,
         received_at: i64,
+        source_transaction_id: Option<&str>,
         reference: Option<&str>,
         note: Option<&str>,
         allocations: &[AllocationRequest<'_>],
@@ -78,9 +81,9 @@ impl ReimbursementPayment {
         let tx = conn.unchecked_transaction()?;
         tx.execute(
             "INSERT INTO reimbursement_payments
-             (reimburser_id, amount, received_at, reference, note, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![reimburser_id, amount, received_at, reference, note, now],
+             (reimburser_id, amount, received_at, source_transaction_id, reference, note, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![reimburser_id, amount, received_at, source_transaction_id, reference, note, now],
         )?;
         let id = tx.last_insert_rowid();
         for allocation in allocations {
@@ -93,6 +96,7 @@ impl ReimbursementPayment {
             reimburser_id,
             amount,
             received_at,
+            source_transaction_id: source_transaction_id.map(str::to_owned),
             reference: reference.map(str::to_owned),
             note: note.map(str::to_owned),
         })
@@ -264,6 +268,7 @@ mod tests {
             rid,
             12_000,
             300,
+            None,
             Some("ACH-1"),
             None,
             &[
@@ -300,6 +305,7 @@ mod tests {
             rid,
             11_000,
             300,
+            None,
             None,
             None,
             &[AllocationRequest {
