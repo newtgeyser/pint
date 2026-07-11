@@ -12,15 +12,17 @@ pub fn run() -> Result<()> {
         println!("No recurring transactions detected.");
         println!("\nRecurring transactions are identified by:");
         println!("  - At least 3 similar transactions");
-        println!("  - Consistent intervals (monthly: 25-35 days, bi-monthly: 55-70 days)");
+        println!(
+            "  - Consistent weekly, biweekly, monthly, bi-monthly, quarterly, or annual intervals"
+        );
         return Ok(());
     }
 
     println!(
-        "{:<25} {:>12} {:>10} {:>6} {:>12}",
-        "MERCHANT", "AMOUNT", "FREQUENCY", "COUNT", "LAST"
+        "{:<22} {:>10} {:>10} {:>9} {:>10} {:>12} {:>10}",
+        "MERCHANT", "AMOUNT", "FREQUENCY", "MONTHLY", "VARIANCE", "NEXT", "STATUS"
     );
-    println!("{}", "-".repeat(70));
+    println!("{}", "-".repeat(91));
 
     for pattern in &patterns {
         let category_str = pattern
@@ -29,24 +31,34 @@ pub fn run() -> Result<()> {
             .map(|c| format!(" [{}]", c))
             .unwrap_or_default();
 
-        let merchant_display = if pattern.merchant.len() > 24 {
-            format!("{}...", &pattern.merchant[..21])
+        let merchant_display = if pattern.merchant.len() > 21 {
+            format!("{}...", &pattern.merchant[..18])
         } else {
             pattern.merchant.clone()
         };
 
         println!(
-            "{:<25} {:>12.2} {:>10} {:>6} {:>12}{}",
+            "{:<22} {:>10.2} {:>10} {:>9.2} {:>10.2} {:>12} {:>10}{}",
             merchant_display,
             pattern.avg_amount,
             pattern.frequency,
-            pattern.occurrences,
-            pattern.last_date,
+            pattern.monthly_commitment,
+            pattern.amount_variance,
+            pattern.expected_next_date,
+            pattern.status,
             category_str,
         );
     }
 
-    println!("\n{} recurring patterns detected", patterns.len());
+    let monthly_total: f64 = patterns
+        .iter()
+        .filter(|pattern| pattern.status != "inactive")
+        .map(|pattern| pattern.monthly_commitment)
+        .sum();
+    println!(
+        "\n{} recurring patterns detected; ${monthly_total:.2} active monthly commitment",
+        patterns.len()
+    );
 
     Ok(())
 }

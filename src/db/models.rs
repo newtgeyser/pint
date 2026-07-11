@@ -713,17 +713,31 @@ impl RewardPoints {
 pub struct RecurringPattern {
     pub merchant: String,
     pub category: Option<String>,
-    pub frequency: String, // "monthly" or "bi-monthly"
-    pub avg_amount: f64,   // average amount in dollars
+    pub frequency: String,
+    pub avg_amount: f64, // average amount in dollars
+    /// Standard deviation of observed amounts, in dollars.
+    pub amount_variance: f64,
+    /// Absolute monthly equivalent of the average expense.
+    pub monthly_commitment: f64,
     pub occurrences: usize,
     pub last_date: String,
+    pub expected_next_date: String,
+    /// One of "active", "overdue", or "inactive".
+    pub status: String,
 }
 
 impl RecurringPattern {
     /// Detect recurring transaction patterns from transaction history.
     /// Looks for transactions with similar descriptions occurring at regular intervals.
     pub fn detect(conn: &Connection) -> Result<Vec<RecurringPattern>> {
-        use chrono::{TimeZone, Utc};
+        Self::detect_at(conn, chrono::Utc::now().timestamp())
+    }
+
+    /// Detect patterns as of a supplied Unix timestamp.
+    ///
+    /// This is useful for reproducible reports and deterministic tests.
+    pub fn detect_at(conn: &Connection, as_of: i64) -> Result<Vec<RecurringPattern>> {
+        use chrono::{Duration, TimeZone, Utc};
         use std::collections::HashMap;
 
         // Fetch all non-pending transactions with their details
@@ -784,12 +798,21 @@ impl RecurringPattern {
                 .collect();
 
             // Check if intervals are consistent
-            if let Some(frequency) = Self::detect_frequency(&intervals) {
+            if let Some((frequency, nominal_days, tolerance_days)) =
+                Self::detect_frequency(&intervals)
+            {
                 let amounts: Vec<f64> = transactions
                     .iter()
                     .map(|(_, amt, _)| *amt as f64 / 100.0)
                     .collect();
                 let avg_amount = amounts.iter().sum::<f64>() / amounts.len() as f64;
+                let amount_variance = (amounts
+                    .iter()
+                    .map(|amount| (amount - avg_amount).powi(2))
+                    .sum::<f64>()
+                    / amounts.len() as f64)
+                    .sqrt();
+                let monthly_commitment = avg_amount.abs() * 30.4375 / nominal_days as f64;
 
                 // Get category from most recent transaction
                 let category = transactions.last().and_then(|(_, _, cat)| cat.clone());
@@ -801,6 +824,26 @@ impl RecurringPattern {
                     .single()
                     .map(|dt| dt.format("%Y-%m-%d").to_string())
                     .unwrap_or_default();
+                let expected_next = Utc
+                    .timestamp_opt(last_posted, 0)
+                    .single()
+                    .map(|dt| dt + Duration::days(nominal_days));
+                let expected_next_date = expected_next
+                    .map(|dt| dt.format("%Y-%m-%d").to_string())
+                    .unwrap_or_default();
+                let overdue_at = expected_next
+                    .map(|dt| dt.timestamp() + tolerance_days * 86_400)
+                    .unwrap_or(i64::MAX);
+                let inactive_at = expected_next
+                    .map(|dt| dt.timestamp() + nominal_days * 86_400)
+                    .unwrap_or(i64::MAX);
+                let status = if as_of <= overdue_at {
+                    "active"
+                } else if as_of <= inactive_at {
+                    "overdue"
+                } else {
+                    "inactive"
+                };
 
                 // Capitalize first letter of merchant for display
                 let merchant_display = if let Some(first) = merchant.chars().next() {
@@ -814,8 +857,12 @@ impl RecurringPattern {
                     category,
                     frequency,
                     avg_amount,
+                    amount_variance,
+                    monthly_commitment,
                     occurrences: transactions.len(),
                     last_date,
+                    expected_next_date,
+                    status: status.to_string(),
                 });
             }
         }
@@ -840,8 +887,8 @@ impl RecurringPattern {
     }
 
     /// Detect if intervals match a known frequency pattern.
-    /// Returns Some("monthly") or Some("bi-monthly") if pattern detected.
-    fn detect_frequency(intervals: &[i64]) -> Option<String> {
+    /// Returns the display name, nominal interval, and overdue tolerance.
+    fn detect_frequency(intervals: &[i64]) -> Option<(String, i64, i64)> {
         if intervals.is_empty() {
             return None;
         }
@@ -864,17 +911,19 @@ impl RecurringPattern {
             return None;
         }
 
-        // Monthly: 25-35 days average
-        if (25.0..=35.0).contains(&avg_interval) {
-            return Some("monthly".to_string());
-        }
+        let frequencies = [
+            ("weekly", 5.0, 9.0, 7, 2),
+            ("biweekly", 12.0, 16.0, 14, 3),
+            ("monthly", 25.0, 35.0, 30, 7),
+            ("bi-monthly", 55.0, 70.0, 61, 10),
+            ("quarterly", 80.0, 100.0, 91, 14),
+            ("annual", 350.0, 380.0, 365, 30),
+        ];
 
-        // Bi-monthly: 55-70 days average
-        if (55.0..=70.0).contains(&avg_interval) {
-            return Some("bi-monthly".to_string());
-        }
-
-        None
+        frequencies
+            .into_iter()
+            .find(|(_, min, max, _, _)| (*min..=*max).contains(&avg_interval))
+            .map(|(name, _, _, days, tolerance)| (name.to_string(), days, tolerance))
     }
 }
 
