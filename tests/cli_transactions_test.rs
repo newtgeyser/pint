@@ -185,6 +185,8 @@ fn test_transaction_search_by_description() {
                 pending: row.get::<_, i64>(4)? != 0,
                 category: row.get(5)?,
                 account_name: row.get(6)?,
+                reimburser: None,
+                reimbursed_at: None,
             })
         }).unwrap()
         .filter_map(|r| r.ok())

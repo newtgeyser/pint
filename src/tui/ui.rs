@@ -323,11 +323,29 @@ fn draw_transactions(frame: &mut Frame, app: &mut App, area: Rect) {
                 tx.description.clone()
             };
 
+            // Reimbursement badge: green "[$:name]" if paid, yellow "[E:name]" if pending
+            let mut desc_spans: Vec<Span> = Vec::new();
+            let reserved_for_badge = match tx.reimburser.as_deref() {
+                Some(name) => {
+                    let (badge_text, badge_style) = if tx.reimbursed_at.is_some() {
+                        (format!("[$:{}] ", truncate(name, 12)), Style::default().fg(Color::Green))
+                    } else {
+                        (format!("[E:{}] ", truncate(name, 12)), Style::default().fg(Color::Yellow))
+                    };
+                    let len = badge_text.chars().count();
+                    desc_spans.push(Span::styled(badge_text, badge_style));
+                    len
+                }
+                None => 0,
+            };
+            let remaining = desc_width.saturating_sub(2).saturating_sub(reserved_for_badge);
+            desc_spans.push(Span::raw(truncate(&desc, remaining).to_string()));
+
             Row::new(vec![
-                Span::raw(tx.date.clone()),
-                Span::styled(amount_str, amount_style),
-                Span::raw(truncate(cat_str, 16).to_string()),
-                Span::raw(truncate(&desc, desc_width.saturating_sub(2)).to_string()),
+                Line::from(Span::raw(tx.date.clone())),
+                Line::from(Span::styled(amount_str, amount_style)),
+                Line::from(Span::raw(truncate(cat_str, 16).to_string())),
+                Line::from(desc_spans),
             ])
         })
         .collect();
@@ -654,7 +672,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 } else {
                     ""
                 };
-                format!("e:Edit category  l:Learn rule  /:Search  f:Filter{}  q:Quit", filter_status)
+                format!("e:Edit category  l:Learn rule  r:Reimbursable  p:Toggle paid  /:Search  f:Filter{}  q:Quit", filter_status)
             }
             View::Holdings => {
                 "e:Edit  q:Quit".to_string()

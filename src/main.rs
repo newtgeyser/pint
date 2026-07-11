@@ -115,6 +115,39 @@ enum Commands {
 
     /// Show detected recurring transactions
     Recurring,
+
+    /// Manage reimbursing entities (employer, LLC, etc.)
+    Reimbursers {
+        #[command(subcommand)]
+        action: Option<ReimbursersAction>,
+    },
+
+    /// Mark a transaction as reimbursable, paid, or clear it
+    Reimburse {
+        /// Transaction ID
+        tx_id: String,
+        /// Reimburser name (omit when using --paid or --clear)
+        entity: Option<String>,
+        /// Mark as paid back (reimbursed)
+        #[arg(long, conflicts_with_all = ["entity", "clear"])]
+        paid: bool,
+        /// Clear the reimbursable marker
+        #[arg(long, conflicts_with_all = ["entity", "paid"])]
+        clear: bool,
+    },
+
+    /// List reimbursable transactions
+    Reimbursable {
+        /// Show only pending (not yet reimbursed)
+        #[arg(long, conflicts_with = "paid")]
+        pending: bool,
+        /// Show only already reimbursed
+        #[arg(long, conflicts_with = "pending")]
+        paid: bool,
+        /// Filter by reimburser name
+        #[arg(short, long)]
+        entity: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -278,6 +311,20 @@ enum RulesAction {
         /// Match mode: substring (default) or token
         #[arg(long, default_value = "substring")]
         r#match: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ReimbursersAction {
+    /// Create a new reimburser
+    Add {
+        /// Reimburser name (e.g., "Employer", "My LLC")
+        name: String,
+    },
+    /// Remove a reimburser (must have no transactions referencing it)
+    Remove {
+        /// Reimburser name
+        name: String,
     },
 }
 
@@ -482,5 +529,43 @@ fn main() -> Result<()> {
         },
 
         Commands::Recurring => commands::recurring::run(),
+
+        Commands::Reimbursers { action } => match action {
+            None => commands::reimbursers::run(),
+            Some(ReimbursersAction::Add { name }) => commands::reimbursers::add(&name),
+            Some(ReimbursersAction::Remove { name }) => commands::reimbursers::remove(&name),
+        },
+
+        Commands::Reimburse {
+            tx_id,
+            entity,
+            paid,
+            clear,
+        } => {
+            if clear {
+                commands::reimburse::clear(&tx_id)
+            } else if paid {
+                commands::reimburse::mark_paid(&tx_id)
+            } else if let Some(entity) = entity {
+                commands::reimburse::set(&tx_id, &entity)
+            } else {
+                anyhow::bail!("Must provide an entity name, --paid, or --clear")
+            }
+        }
+
+        Commands::Reimbursable {
+            pending,
+            paid,
+            entity,
+        } => {
+            let filter = if pending {
+                pint::db::models::ReimbursableFilter::Pending
+            } else if paid {
+                pint::db::models::ReimbursableFilter::Paid
+            } else {
+                pint::db::models::ReimbursableFilter::All
+            };
+            commands::reimburse::list(filter, entity.as_deref())
+        }
     }
 }

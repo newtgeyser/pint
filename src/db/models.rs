@@ -74,7 +74,7 @@ impl Account {
     pub fn find_all_for_select(conn: &Connection) -> Result<Vec<(String, String)>> {
         let mut stmt = conn.prepare(
             "SELECT id, COALESCE(nickname, name) FROM accounts
-             ORDER BY manual DESC, account_type, COALESCE(nickname, name)"
+             ORDER BY manual DESC, account_type, COALESCE(nickname, name)",
         )?;
         let items = stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
@@ -92,6 +92,8 @@ pub struct Transaction {
     pub description: String,
     pub pending: bool,
     pub category_id: Option<i64>,
+    pub reimburser_id: Option<i64>,
+    pub reimbursed_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -106,6 +108,8 @@ impl Transaction {
             description: row.get("description")?,
             pending: row.get::<_, i64>("pending")? != 0,
             category_id: row.get("category_id")?,
+            reimburser_id: row.get("reimburser_id")?,
+            reimbursed_at: row.get("reimbursed_at")?,
             created_at: row.get("created_at")?,
             updated_at: row.get("updated_at")?,
         })
@@ -123,6 +127,33 @@ impl Transaction {
         )?;
         Ok(())
     }
+
+    /// Mark a transaction as reimbursable by the given reimburser. Resets reimbursed_at.
+    pub fn set_reimburser(conn: &Connection, tx_id: &str, reimburser_id: i64) -> Result<bool> {
+        let updated = conn.execute(
+            "UPDATE transactions SET reimburser_id = ?1, reimbursed_at = NULL WHERE id = ?2",
+            rusqlite::params![reimburser_id, tx_id],
+        )?;
+        Ok(updated > 0)
+    }
+
+    /// Mark a reimbursable transaction as paid back (sets reimbursed_at to the given timestamp).
+    pub fn set_reimbursed_at(conn: &Connection, tx_id: &str, ts: Option<i64>) -> Result<bool> {
+        let updated = conn.execute(
+            "UPDATE transactions SET reimbursed_at = ?1 WHERE id = ?2",
+            rusqlite::params![ts, tx_id],
+        )?;
+        Ok(updated > 0)
+    }
+
+    /// Clear all reimbursement state on a transaction.
+    pub fn clear_reimburser(conn: &Connection, tx_id: &str) -> Result<bool> {
+        let updated = conn.execute(
+            "UPDATE transactions SET reimburser_id = NULL, reimbursed_at = NULL WHERE id = ?1",
+            rusqlite::params![tx_id],
+        )?;
+        Ok(updated > 0)
+    }
 }
 
 /// A transaction with display-ready fields for UI/listing.
@@ -135,20 +166,36 @@ pub struct TransactionRow {
     pub category: Option<String>,
     pub account_name: String,
     pub pending: bool,
+    pub reimburser: Option<String>,
+    pub reimbursed_at: Option<i64>,
+}
+
+/// Filter for listing reimbursable transactions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReimbursableFilter {
+    All,
+    Pending,
+    Paid,
 }
 
 impl TransactionRow {
     /// Find all transactions, optionally filtered by account.
-    pub fn find_all(conn: &Connection, account_filter: Option<&str>, limit: usize) -> Result<Vec<TransactionRow>> {
+    pub fn find_all(
+        conn: &Connection,
+        account_filter: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<TransactionRow>> {
         use chrono::{TimeZone, Utc};
 
         let (query, params): (String, Vec<String>) = if let Some(filter) = account_filter {
             (
                 format!(
                     "SELECT t.id, t.posted, t.amount, t.description, t.pending, c.name as category,
-                            COALESCE(a.nickname, a.name) as account_name
+                            COALESCE(a.nickname, a.name) as account_name,
+                            r.name as reimburser, t.reimbursed_at
                      FROM transactions t
                      LEFT JOIN categories c ON t.category_id = c.id
+                     LEFT JOIN reimbursers r ON t.reimburser_id = r.id
                      JOIN accounts a ON t.account_id = a.id
                      WHERE a.id LIKE '%' || ?1 || '%' OR a.nickname LIKE '%' || ?1 || '%' OR a.name LIKE '%' || ?1 || '%'
                      ORDER BY t.posted DESC
@@ -159,20 +206,25 @@ impl TransactionRow {
             (
                 format!(
                     "SELECT t.id, t.posted, t.amount, t.description, t.pending, c.name as category,
-                            COALESCE(a.nickname, a.name) as account_name
+                            COALESCE(a.nickname, a.name) as account_name,
+                            r.name as reimburser, t.reimbursed_at
                      FROM transactions t
                      LEFT JOIN categories c ON t.category_id = c.id
+                     LEFT JOIN reimbursers r ON t.reimburser_id = r.id
                      JOIN accounts a ON t.account_id = a.id
                      ORDER BY t.posted DESC
-                     LIMIT {}", limit),
-                vec![]
+                     LIMIT {}",
+                    limit
+                ),
+                vec![],
             )
         };
 
         let mut stmt = conn.prepare(&query)?;
         let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
             let posted: i64 = row.get(1)?;
-            let date = Utc.timestamp_opt(posted, 0)
+            let date = Utc
+                .timestamp_opt(posted, 0)
                 .single()
                 .map(|dt| dt.format("%Y-%m-%d").to_string())
                 .unwrap_or_default();
@@ -185,6 +237,73 @@ impl TransactionRow {
                 pending: row.get::<_, i64>(4)? != 0,
                 category: row.get(5)?,
                 account_name: row.get(6)?,
+                reimburser: row.get(7)?,
+                reimbursed_at: row.get(8)?,
+            })
+        })?;
+
+        let transactions = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(transactions)
+    }
+
+    /// Find transactions marked as reimbursable, with optional status and entity filters.
+    pub fn find_reimbursable(
+        conn: &Connection,
+        filter: ReimbursableFilter,
+        entity: Option<&str>,
+    ) -> Result<Vec<TransactionRow>> {
+        use chrono::{TimeZone, Utc};
+
+        let mut where_clauses = vec!["t.reimburser_id IS NOT NULL".to_string()];
+        let mut params: Vec<String> = Vec::new();
+
+        match filter {
+            ReimbursableFilter::Pending => {
+                where_clauses.push("t.reimbursed_at IS NULL".to_string())
+            }
+            ReimbursableFilter::Paid => {
+                where_clauses.push("t.reimbursed_at IS NOT NULL".to_string())
+            }
+            ReimbursableFilter::All => {}
+        }
+
+        if let Some(name) = entity {
+            where_clauses.push(format!("LOWER(r.name) = LOWER(?{})", params.len() + 1));
+            params.push(name.to_string());
+        }
+
+        let query = format!(
+            "SELECT t.id, t.posted, t.amount, t.description, t.pending, c.name as category,
+                    COALESCE(a.nickname, a.name) as account_name,
+                    r.name as reimburser, t.reimbursed_at
+             FROM transactions t
+             LEFT JOIN categories c ON t.category_id = c.id
+             JOIN reimbursers r ON t.reimburser_id = r.id
+             JOIN accounts a ON t.account_id = a.id
+             WHERE {}
+             ORDER BY r.name, t.posted DESC",
+            where_clauses.join(" AND ")
+        );
+
+        let mut stmt = conn.prepare(&query)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+            let posted: i64 = row.get(1)?;
+            let date = Utc
+                .timestamp_opt(posted, 0)
+                .single()
+                .map(|dt| dt.format("%Y-%m-%d").to_string())
+                .unwrap_or_default();
+
+            Ok(TransactionRow {
+                id: row.get(0)?,
+                date,
+                amount: row.get::<_, i64>(2)? as f64 / 100.0,
+                description: row.get(3)?,
+                pending: row.get::<_, i64>(4)? != 0,
+                category: row.get(5)?,
+                account_name: row.get(6)?,
+                reimburser: row.get(7)?,
+                reimbursed_at: row.get(8)?,
             })
         })?;
 
@@ -213,9 +332,8 @@ impl Category {
 
     /// Find all categories, ordered by name.
     pub fn find_all(conn: &Connection) -> Result<Vec<Category>> {
-        let mut stmt = conn.prepare(
-            "SELECT id, name, parent_id, created_at FROM categories ORDER BY name"
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, parent_id, created_at FROM categories ORDER BY name")?;
         let categories = stmt
             .query_map([], Category::from_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -224,9 +342,7 @@ impl Category {
 
     /// Find all categories as (id, name) tuples for selection dialogs.
     pub fn find_all_for_select(conn: &Connection) -> Result<Vec<(i64, String)>> {
-        let mut stmt = conn.prepare(
-            "SELECT id, name FROM categories ORDER BY name"
-        )?;
+        let mut stmt = conn.prepare("SELECT id, name FROM categories ORDER BY name")?;
         let items = stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -235,9 +351,7 @@ impl Category {
 
     /// Find all categories as (id_string, name) tuples for selection dialogs.
     pub fn find_all_for_select_strings(conn: &Connection) -> Result<Vec<(String, String)>> {
-        let mut stmt = conn.prepare(
-            "SELECT id, name FROM categories ORDER BY name"
-        )?;
+        let mut stmt = conn.prepare("SELECT id, name FROM categories ORDER BY name")?;
         let items = stmt
             .query_map([], |row| {
                 let id: i64 = row.get(0)?;
@@ -266,7 +380,12 @@ impl MerchantRule {
     }
 
     /// Insert or update a merchant rule.
-    pub fn upsert(conn: &Connection, pattern: &str, match_mode: &str, category_id: i64) -> Result<()> {
+    pub fn upsert(
+        conn: &Connection,
+        pattern: &str,
+        match_mode: &str,
+        category_id: i64,
+    ) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
         conn.execute(
             "INSERT OR REPLACE INTO merchant_rules (pattern, match_mode, category_id, created_at) VALUES (?1, ?2, ?3, ?4)",
@@ -277,16 +396,18 @@ impl MerchantRule {
 
     /// Delete a merchant rule by pattern.
     pub fn delete_by_pattern(conn: &Connection, pattern: &str) -> Result<()> {
-        conn.execute(
-            "DELETE FROM merchant_rules WHERE pattern = ?1",
-            [pattern],
-        )?;
+        conn.execute("DELETE FROM merchant_rules WHERE pattern = ?1", [pattern])?;
         Ok(())
     }
 
     /// Apply a rule to all transactions with matching descriptions.
     /// Returns the number of transactions updated.
-    pub fn apply_to_transactions(conn: &Connection, pattern: &str, match_mode: &str, category_id: i64) -> Result<usize> {
+    pub fn apply_to_transactions(
+        conn: &Connection,
+        pattern: &str,
+        match_mode: &str,
+        category_id: i64,
+    ) -> Result<usize> {
         let pattern_lower = pattern.to_lowercase();
 
         // For substring matching, use SQL LIKE which is more reliable
@@ -301,9 +422,7 @@ impl MerchantRule {
 
         // For token matching, we need to do it in Rust since SQL can't easily do word-boundary matching
         let tx_ids: Vec<(String, String)> = {
-            let mut stmt = conn.prepare(
-                "SELECT id, description FROM transactions"
-            )?;
+            let mut stmt = conn.prepare("SELECT id, description FROM transactions")?;
             stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
                 .filter_map(|r| r.ok())
                 .collect()
@@ -313,7 +432,10 @@ impl MerchantRule {
         for (tx_id, description) in tx_ids {
             let desc_lower = description.to_lowercase();
             // Token match: check if any word starts with the pattern
-            if desc_lower.split_whitespace().any(|word| word.starts_with(&pattern_lower)) {
+            if desc_lower
+                .split_whitespace()
+                .any(|word| word.starts_with(&pattern_lower))
+            {
                 conn.execute(
                     "UPDATE transactions SET category_id = ?1 WHERE id = ?2",
                     rusqlite::params![category_id, tx_id],
@@ -341,7 +463,7 @@ impl RuleRow {
             "SELECT mr.pattern, mr.match_mode, c.name
              FROM merchant_rules mr
              JOIN categories c ON mr.category_id = c.id
-             ORDER BY mr.pattern"
+             ORDER BY mr.pattern",
         )?;
         let rules = stmt
             .query_map([], |row| {
@@ -362,7 +484,7 @@ impl RuleRow {
         let mut stmt = conn.prepare(
             "SELECT mr.pattern, mr.match_mode, c.name
              FROM merchant_rules mr
-             JOIN categories c ON mr.category_id = c.id"
+             JOIN categories c ON mr.category_id = c.id",
         )?;
 
         let rules: Vec<RuleRow> = stmt
@@ -379,7 +501,9 @@ impl RuleRow {
         for rule in rules {
             let pattern_lower = rule.pattern.to_lowercase();
             let matches = if rule.match_mode == "token" {
-                desc_lower.split_whitespace().any(|word| word.starts_with(&pattern_lower))
+                desc_lower
+                    .split_whitespace()
+                    .any(|word| word.starts_with(&pattern_lower))
             } else {
                 desc_lower.contains(&pattern_lower)
             };
@@ -561,7 +685,7 @@ impl RewardPoints {
         let mut stmt = conn.prepare(
             "SELECT id, program, points, note, created_at, updated_at
              FROM rewards_points
-             ORDER BY program"
+             ORDER BY program",
         )?;
         let points = stmt
             .query_map([], RewardPoints::from_row)?
@@ -589,8 +713,8 @@ impl RewardPoints {
 pub struct RecurringPattern {
     pub merchant: String,
     pub category: Option<String>,
-    pub frequency: String,      // "monthly" or "bi-monthly"
-    pub avg_amount: f64,        // average amount in dollars
+    pub frequency: String, // "monthly" or "bi-monthly"
+    pub avg_amount: f64,   // average amount in dollars
     pub occurrences: usize,
     pub last_date: String,
 }
@@ -608,7 +732,7 @@ impl RecurringPattern {
              FROM transactions t
              LEFT JOIN categories c ON t.category_id = c.id
              WHERE t.pending = 0
-             ORDER BY t.posted ASC"
+             ORDER BY t.posted ASC",
         )?;
 
         // Group transactions by normalized merchant name
@@ -701,7 +825,11 @@ impl RecurringPattern {
         patterns.retain(|p| {
             p.category
                 .as_ref()
-                .map(|c| !excluded_categories.iter().any(|exc| c.to_lowercase() == *exc))
+                .map(|c| {
+                    !excluded_categories
+                        .iter()
+                        .any(|exc| c.to_lowercase() == *exc)
+                })
                 .unwrap_or(true) // Keep uncategorized
         });
 
@@ -747,5 +875,85 @@ impl RecurringPattern {
         }
 
         None
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Reimburser {
+    pub id: i64,
+    pub name: String,
+    pub created_at: i64,
+}
+
+impl Reimburser {
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get("id")?,
+            name: row.get("name")?,
+            created_at: row.get("created_at")?,
+        })
+    }
+
+    /// Find all reimbursers, ordered by name.
+    pub fn find_all(conn: &Connection) -> Result<Vec<Reimburser>> {
+        let mut stmt =
+            conn.prepare("SELECT id, name, created_at FROM reimbursers ORDER BY name")?;
+        let items = stmt
+            .query_map([], Reimburser::from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(items)
+    }
+
+    /// Find a reimburser by name (case-insensitive).
+    pub fn find_by_name(conn: &Connection, name: &str) -> Result<Option<Reimburser>> {
+        let result = conn
+            .query_row(
+                "SELECT id, name, created_at FROM reimbursers WHERE name = ?1 COLLATE NOCASE",
+                [name],
+                Reimburser::from_row,
+            )
+            .optional()?;
+        Ok(result)
+    }
+
+    /// Find all reimbursers as (id, name) tuples for selection dialogs.
+    pub fn find_all_for_select(conn: &Connection) -> Result<Vec<(i64, String)>> {
+        let mut stmt = conn.prepare("SELECT id, name FROM reimbursers ORDER BY name")?;
+        let items = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(items)
+    }
+
+    /// Insert a new reimburser. Errors if the name already exists.
+    pub fn insert(conn: &Connection, name: &str) -> Result<i64> {
+        let now = chrono::Utc::now().timestamp();
+        conn.execute(
+            "INSERT INTO reimbursers (name, created_at) VALUES (?1, ?2)",
+            rusqlite::params![name, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Delete a reimburser by name. Errors if any transaction still references it.
+    pub fn delete_by_name(conn: &Connection, name: &str) -> Result<()> {
+        let reimburser = Self::find_by_name(conn, name)?
+            .ok_or_else(|| anyhow::anyhow!("Reimburser '{}' not found", name))?;
+
+        let referenced: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM transactions WHERE reimburser_id = ?1",
+            [reimburser.id],
+            |row| row.get(0),
+        )?;
+        if referenced > 0 {
+            anyhow::bail!(
+                "Cannot remove '{}': {} transaction(s) still reference it. Clear them first with `pint reimburse <tx-id> --clear`.",
+                name,
+                referenced
+            );
+        }
+
+        conn.execute("DELETE FROM reimbursers WHERE id = ?1", [reimburser.id])?;
+        Ok(())
     }
 }

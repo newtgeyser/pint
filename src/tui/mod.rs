@@ -77,8 +77,8 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                     KeyCode::Backspace => app.dialog_backspace(),
                     KeyCode::Left => app.dialog_cursor_left(),
                     KeyCode::Right => app.dialog_cursor_right(),
-                    KeyCode::Up | KeyCode::Char('k') => app.dialog_select_up(),
-                    KeyCode::Down | KeyCode::Char('j') => app.dialog_select_down(),
+                    KeyCode::Up => app.dialog_select_up(),
+                    KeyCode::Down => app.dialog_select_down(),
                     KeyCode::Char(c) => app.dialog_input(c),
                     _ => {}
                 }
@@ -171,6 +171,8 @@ fn handle_view_keys(app: &mut App, key: KeyCode) -> Result<()> {
             KeyCode::Char('c') => app.clear_filters()?,
             KeyCode::Char('l') => app.show_rule_dialog(),
             KeyCode::Char('e') => app.show_categorize_dialog(),
+            KeyCode::Char('r') => app.show_reimburse_dialog(),
+            KeyCode::Char('p') => app.toggle_reimbursed_paid()?,
             _ => {}
         },
         View::Holdings => match key {

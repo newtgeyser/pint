@@ -2,7 +2,7 @@ use anyhow::Result;
 use ratatui::widgets::TableState;
 use rusqlite::Connection;
 
-use crate::db::models::{Account, Asset, Category, Holding, MerchantRule, RecurringPattern, RuleRow, Transaction, TransactionRow};
+use crate::db::models::{Account, Asset, Category, Holding, MerchantRule, RecurringPattern, Reimburser, RuleRow, Transaction, TransactionRow};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -143,6 +143,7 @@ pub enum DialogAction {
     EditRule { tx_id: String, rule_pattern: String },
     EditRuleFromList { rule_pattern: String },
     CategorizeTransaction { tx_id: String },
+    MarkReimbursable { tx_id: String },
     AddAsset,
     EditHolding { holding_id: String },
 }
@@ -978,6 +979,28 @@ impl App {
                         }
                     }
                 }
+                DialogAction::MarkReimbursable { tx_id } => {
+                    if let DialogType::Select { items, selected, .. } = &dialog.dialog_type {
+                        let filter = dialog.input1.to_lowercase();
+                        let filtered_items: Vec<&(String, String)> = if filter.is_empty() {
+                            items.iter().collect()
+                        } else {
+                            items.iter().filter(|(_, name)| name.to_lowercase().contains(&filter)).collect()
+                        };
+                        if let Some((id_str, name)) = filtered_items.get(*selected) {
+                            if id_str == "0" {
+                                // "(none)" — clear marker
+                                Transaction::clear_reimburser(&self.conn, &tx_id)?;
+                                self.load_transactions()?;
+                                self.status = Some(format!("Cleared reimbursable marker on {}", tx_id));
+                            } else if let Ok(reimburser_id) = id_str.parse::<i64>() {
+                                Transaction::set_reimburser(&self.conn, &tx_id, reimburser_id)?;
+                                self.load_transactions()?;
+                                self.status = Some(format!("Marked reimbursable by '{}'", name));
+                            }
+                        }
+                    }
+                }
                 DialogAction::AddAsset => {
                     if let DialogType::AssetEditor { selected_type, .. } = &dialog.dialog_type {
                         // input1 = name, input2 = value
@@ -1257,6 +1280,78 @@ impl App {
 
         self.load_transactions()?;
         self.status = Some(format!("Category set to '{}'", category_name));
+        Ok(())
+    }
+
+    // Reimbursement actions
+
+    pub fn show_reimburse_dialog(&mut self) {
+        let selected = self.transactions_state.selected().unwrap_or(0);
+        let Some(tx) = self.transactions.get(selected) else {
+            return;
+        };
+        let tx_id = tx.id.clone();
+        let current = tx.reimburser.clone();
+
+        let entities = match Reimburser::find_all_for_select(&self.conn) {
+            Ok(items) => items,
+            Err(_) => {
+                self.status = Some("Failed to load reimbursers".to_string());
+                return;
+            }
+        };
+
+        if entities.is_empty() {
+            self.status = Some("No reimbursers defined. Run 'pint reimbursers add <name>'.".to_string());
+            return;
+        }
+
+        // Build select items: "(none)" first to allow clearing, then entities.
+        let mut items: Vec<(String, String)> = vec![("0".to_string(), "(none)".to_string())];
+        for (id, name) in entities {
+            items.push((id.to_string(), name));
+        }
+
+        let selected_idx = current
+            .as_ref()
+            .and_then(|name| items.iter().position(|(_, n)| n == name))
+            .unwrap_or(0);
+
+        self.show_dialog(
+            DialogType::Select {
+                title: "Reimbursable by".to_string(),
+                items,
+                selected: selected_idx,
+            },
+            DialogAction::MarkReimbursable { tx_id },
+        );
+    }
+
+    pub fn toggle_reimbursed_paid(&mut self) -> Result<()> {
+        let selected = self.transactions_state.selected().unwrap_or(0);
+        let Some(tx) = self.transactions.get(selected) else {
+            return Ok(());
+        };
+        if tx.reimburser.is_none() {
+            self.status = Some("Press 'R' to mark as reimbursable first.".to_string());
+            return Ok(());
+        }
+
+        let tx_id = tx.id.clone();
+        let new_ts = if tx.reimbursed_at.is_some() {
+            None
+        } else {
+            Some(chrono::Utc::now().timestamp())
+        };
+        Transaction::set_reimbursed_at(&self.conn, &tx_id, new_ts)?;
+        self.load_transactions()?;
+        self.status = Some(
+            if new_ts.is_some() {
+                "Marked as reimbursed".to_string()
+            } else {
+                "Marked as pending".to_string()
+            },
+        );
         Ok(())
     }
 

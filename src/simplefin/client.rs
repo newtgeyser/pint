@@ -87,18 +87,25 @@ impl SimpleFin {
 
         let text = response.text().context("Failed to read response")?;
 
-        // Debug: print raw response if PINT_DEBUG is set
-        if std::env::var("PINT_DEBUG").is_ok() {
-            eprintln!("=== RAW SIMPLEFIN RESPONSE ===");
-            eprintln!("{}", text);
-            eprintln!("=== END RESPONSE ===");
-        }
-
         let account_set: AccountSet =
             serde_json::from_str(&text).context("Failed to parse account data")?;
 
-        // Note: account_set.errors contains any warnings from SimpleFIN
-        // The caller can check and display these as needed
+        // Debug: print summary (not raw response, which contains sensitive data)
+        if std::env::var("PINT_DEBUG").is_ok() {
+            eprintln!("=== SIMPLEFIN RESPONSE SUMMARY ===");
+            for account in &account_set.accounts {
+                eprintln!(
+                    "  {} — {} transactions, {} holdings",
+                    account.name,
+                    account.transactions.len(),
+                    account.holdings.len()
+                );
+            }
+            if !account_set.errors.is_empty() {
+                eprintln!("  Errors: {:?}", account_set.errors);
+            }
+            eprintln!("=== END SUMMARY ===");
+        }
 
         Ok(account_set)
     }

@@ -139,6 +139,25 @@ pint categorize learn abc123 "Coffee & Cafes" "JOES COFFEE"
 | `pint points add <program> <points> -n <note>` | Add a new program |
 | `pint points remove <id>` | Remove a program |
 
+### Reimbursable Expenses
+
+Track expenses that should be paid back by an entity (employer, your own LLC, a friend, etc.). Useful for separating personal-card spending that you'll get reimbursed for from spending that's actually yours.
+
+| Command | Description |
+|---------|-------------|
+| `pint reimbursers` | List reimbursing entities |
+| `pint reimbursers add <name>` | Create an entity (e.g., "Employer", "My LLC") |
+| `pint reimbursers remove <name>` | Delete an entity (must have no transactions) |
+| `pint reimburse <tx-id> <entity>` | Mark a transaction as reimbursable by `<entity>` |
+| `pint reimburse <tx-id> --paid` | Mark a reimbursable transaction as paid back |
+| `pint reimburse <tx-id> --clear` | Remove the reimbursable marker |
+| `pint reimbursable` | List all reimbursable transactions |
+| `pint reimbursable --pending` | Only outstanding (not yet repaid) |
+| `pint reimbursable --paid` | Only already reimbursed |
+| `pint reimbursable --entity <name>` | Filter by entity |
+
+In the TUI, on the Transactions view: press `r` to mark/clear reimbursable on the selected row, and `p` to toggle paid/pending status. Reimbursable rows show a colored badge: yellow `[E:Employer]` for pending, green `[$:Employer]` for paid.
+
 ## Scraping Reward Points
 
 Pint includes a [Claude Code](https://docs.anthropic.com/en/docs/claude-code) slash command (`/scrape-points`) that uses Playwright to log into bank websites, read reward point balances, and store them via `pint points set`. Claude adaptively reads page snapshots instead of brittle CSS selectors, so bank site layout changes don't break things. MFA challenges are handled interactively in the conversation.

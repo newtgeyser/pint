@@ -116,6 +116,12 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS reimbursers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+            created_at INTEGER NOT NULL
+        );
         ",
     )?;
 
@@ -155,13 +161,9 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     }
 
     // Add manual column if it doesn't exist (for existing databases)
-    let has_manual = conn
-        .prepare("SELECT manual FROM accounts LIMIT 0")
-        .is_ok();
+    let has_manual = conn.prepare("SELECT manual FROM accounts LIMIT 0").is_ok();
     if !has_manual {
-        conn.execute_batch(
-            "ALTER TABLE accounts ADD COLUMN manual INTEGER NOT NULL DEFAULT 0;",
-        )?;
+        conn.execute_batch("ALTER TABLE accounts ADD COLUMN manual INTEGER NOT NULL DEFAULT 0;")?;
     }
 
     // Add nickname column if it doesn't exist (for existing databases)
@@ -169,9 +171,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         .prepare("SELECT nickname FROM accounts LIMIT 0")
         .is_ok();
     if !has_nickname {
-        conn.execute_batch(
-            "ALTER TABLE accounts ADD COLUMN nickname TEXT;",
-        )?;
+        conn.execute_batch("ALTER TABLE accounts ADD COLUMN nickname TEXT;")?;
     }
 
     // Index creation must happen after ensuring the column exists (older DBs).
@@ -202,13 +202,9 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     )?;
 
     // Migrate holdings table: add price column if missing
-    let has_price = conn
-        .prepare("SELECT price FROM holdings LIMIT 0")
-        .is_ok();
+    let has_price = conn.prepare("SELECT price FROM holdings LIMIT 0").is_ok();
     if !has_price {
-        conn.execute_batch(
-            "ALTER TABLE holdings ADD COLUMN price INTEGER;",
-        )?;
+        conn.execute_batch("ALTER TABLE holdings ADD COLUMN price INTEGER;")?;
     }
 
     // Migrate holdings table: add cost_basis column if missing
@@ -216,9 +212,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         .prepare("SELECT cost_basis FROM holdings LIMIT 0")
         .is_ok();
     if !has_cost_basis {
-        conn.execute_batch(
-            "ALTER TABLE holdings ADD COLUMN cost_basis INTEGER;",
-        )?;
+        conn.execute_batch("ALTER TABLE holdings ADD COLUMN cost_basis INTEGER;")?;
     }
 
     // Remove the overly-aggressive UNIQUE(account_id, posted, amount, description) constraint
@@ -236,6 +230,9 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         .is_some_and(|sql| sql.contains("UNIQUE(account_id, posted, amount, description)"));
 
     if has_legacy_dedup_constraint {
+        // Note: this rebuild only runs on very old DBs predating the dedup constraint removal.
+        // Older DBs do not have reimburser columns, so we don't need to copy them here —
+        // the ADD COLUMN migrations below will add them after this rebuild.
         conn.execute_batch(
             "
             PRAGMA foreign_keys = OFF;
@@ -301,6 +298,58 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
+        ",
+    )?;
+
+    // Create reimbursers table if it doesn't exist (for existing databases)
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS reimbursers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+            created_at INTEGER NOT NULL
+        );
+        ",
+    )?;
+
+    // Add reimburser_id column on transactions if missing
+    let has_reimburser_id = conn
+        .prepare("SELECT reimburser_id FROM transactions LIMIT 0")
+        .is_ok();
+    if !has_reimburser_id {
+        conn.execute_batch(
+            "ALTER TABLE transactions ADD COLUMN reimburser_id INTEGER REFERENCES reimbursers(id);",
+        )?;
+    }
+
+    // Add reimbursed_at column on transactions if missing
+    let has_reimbursed_at = conn
+        .prepare("SELECT reimbursed_at FROM transactions LIMIT 0")
+        .is_ok();
+    if !has_reimbursed_at {
+        conn.execute_batch("ALTER TABLE transactions ADD COLUMN reimbursed_at INTEGER;")?;
+    }
+
+    // Older schemas allowed names that differed only by case. Merge those rows
+    // before enforcing the same case-insensitive uniqueness as new databases.
+    conn.execute_batch(
+        "
+        UPDATE transactions
+        SET reimburser_id = (
+            SELECT MIN(canonical.id)
+            FROM reimbursers canonical
+            JOIN reimbursers current ON canonical.name = current.name COLLATE NOCASE
+            WHERE current.id = transactions.reimburser_id
+        )
+        WHERE reimburser_id IS NOT NULL;
+
+        DELETE FROM reimbursers
+        WHERE id NOT IN (
+            SELECT MIN(id) FROM reimbursers GROUP BY name COLLATE NOCASE
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_reimbursers_name_nocase
+            ON reimbursers(name COLLATE NOCASE);
         ",
     )?;
 

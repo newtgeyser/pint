@@ -7,6 +7,8 @@ pub mod import_holdings;
 pub mod points;
 pub mod prices;
 pub mod recurring;
+pub mod reimburse;
+pub mod reimbursers;
 pub mod rules;
 pub mod setup;
 pub mod sync;

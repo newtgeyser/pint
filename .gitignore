@@ -8,3 +8,9 @@
 
 # Local data
 *.db
+
+# Playwright MCP artifacts (may contain bank PII from scraping)
+.playwright-mcp/
+
+# Debug screenshots
+*.png
