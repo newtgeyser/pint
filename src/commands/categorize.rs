@@ -1,7 +1,7 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
-use crate::db;
 use super::rules;
+use crate::db;
 
 pub fn run_auto() -> Result<()> {
     run_auto_quiet(false)
@@ -11,11 +11,8 @@ pub fn run_auto_quiet(quiet: bool) -> Result<()> {
     let conn = db::open().context("Database not found. Run 'pint init' first.")?;
 
     // Check if there are any rules in the database
-    let rule_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM merchant_rules",
-        [],
-        |row| row.get(0),
-    )?;
+    let rule_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM merchant_rules", [], |row| row.get(0))?;
 
     if rule_count == 0 {
         bail!("No rules found. Run 'pint setup' to import default rules.");

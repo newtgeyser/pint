@@ -63,7 +63,9 @@ pub struct Transaction {
 
 impl Account {
     pub fn institution_name(&self) -> Option<&str> {
-        self.org.as_ref().and_then(|o| o.name.as_deref().or(o.domain.as_deref()))
+        self.org
+            .as_ref()
+            .and_then(|o| o.name.as_deref().or(o.domain.as_deref()))
     }
 
     pub fn balance_cents(&self) -> Option<i64> {
@@ -115,11 +117,15 @@ impl Transaction {
 
 impl Holding {
     pub fn market_value_cents(&self) -> Option<i64> {
-        self.market_value.as_ref().and_then(|s| parse_amount_to_cents(s))
+        self.market_value
+            .as_ref()
+            .and_then(|s| parse_amount_to_cents(s))
     }
 
     pub fn cost_basis_cents(&self) -> Option<i64> {
-        self.cost_basis.as_ref().and_then(|s| parse_amount_to_cents(s))
+        self.cost_basis
+            .as_ref()
+            .and_then(|s| parse_amount_to_cents(s))
     }
 
     pub fn price_cents(&self) -> Option<i64> {
@@ -152,7 +158,11 @@ fn parse_amount_to_cents(amount: &str) -> Option<i64> {
     let whole_part = parts.next().unwrap_or("");
     let frac_part = parts.next().unwrap_or("");
 
-    let whole_part = if whole_part.is_empty() { "0" } else { whole_part };
+    let whole_part = if whole_part.is_empty() {
+        "0"
+    } else {
+        whole_part
+    };
 
     if !whole_part.chars().all(|c| c.is_ascii_digit()) {
         return None;

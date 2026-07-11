@@ -57,8 +57,10 @@ fn test_transactions_ordered_by_date() {
 
     // Should be ordered by posted date descending (most recent first)
     for i in 0..transactions.len() - 1 {
-        assert!(transactions[i].date >= transactions[i + 1].date,
-            "Transactions should be ordered by date descending");
+        assert!(
+            transactions[i].date >= transactions[i + 1].date,
+            "Transactions should be ordered by date descending"
+        );
     }
 }
 
@@ -69,7 +71,8 @@ fn test_transaction_amount_formatting() {
     let transactions = TransactionRow::find_all(&conn, None, 100).unwrap();
 
     // Find a mortgage transaction (should be -$2,450.00)
-    let mortgage = transactions.iter()
+    let mortgage = transactions
+        .iter()
         .find(|t| t.description.contains("MORTGAGE"))
         .expect("Should find mortgage transaction");
 
@@ -90,9 +93,15 @@ fn test_categorized_transactions() {
     assert!(categorized > uncategorized);
 
     // Check specific categories exist
-    let has_mortgage = transactions.iter().any(|t| t.category.as_deref() == Some("Mortgage"));
-    let has_utilities = transactions.iter().any(|t| t.category.as_deref() == Some("Utilities"));
-    let has_groceries = transactions.iter().any(|t| t.category.as_deref() == Some("Groceries"));
+    let has_mortgage = transactions
+        .iter()
+        .any(|t| t.category.as_deref() == Some("Mortgage"));
+    let has_utilities = transactions
+        .iter()
+        .any(|t| t.category.as_deref() == Some("Utilities"));
+    let has_groceries = transactions
+        .iter()
+        .any(|t| t.category.as_deref() == Some("Groceries"));
 
     assert!(has_mortgage);
     assert!(has_utilities);
@@ -106,14 +115,17 @@ fn test_uncategorized_transactions() {
     let transactions = TransactionRow::find_all(&conn, None, 1000).unwrap();
 
     // Should have some uncategorized transactions (Amazon, ATM, Venmo, etc.)
-    let uncategorized: Vec<_> = transactions.iter()
+    let uncategorized: Vec<_> = transactions
+        .iter()
         .filter(|t| t.category.is_none())
         .collect();
 
     assert!(uncategorized.len() > 0);
 
     // Check specific uncategorized merchants
-    let has_amazon = uncategorized.iter().any(|t| t.description.contains("AMAZON"));
+    let has_amazon = uncategorized
+        .iter()
+        .any(|t| t.description.contains("AMAZON"));
     assert!(has_amazon);
 }
 
@@ -124,9 +136,7 @@ fn test_pending_transactions() {
     let transactions = TransactionRow::find_all(&conn, None, 1000).unwrap();
 
     // Should have one pending transaction
-    let pending: Vec<_> = transactions.iter()
-        .filter(|t| t.pending)
-        .collect();
+    let pending: Vec<_> = transactions.iter().filter(|t| t.pending).collect();
 
     assert_eq!(pending.len(), 1);
     assert!(pending[0].description.contains("PENDING"));
@@ -147,7 +157,8 @@ fn test_set_transaction_category() {
 
     // Verify the category was set
     let transactions = TransactionRow::find_all(&conn, None, 1000).unwrap();
-    let updated_tx = transactions.iter()
+    let updated_tx = transactions
+        .iter()
         .find(|t| t.id == tx_id)
         .expect("Should find the transaction");
 
@@ -160,19 +171,22 @@ fn test_transaction_search_by_description() {
 
     // Search for Netflix transactions using SQL LIKE
     let transactions: Vec<TransactionRow> = {
-        let mut stmt = conn.prepare(
-            "SELECT t.id, t.posted, t.amount, t.description, t.pending, c.name as category,
+        let mut stmt = conn
+            .prepare(
+                "SELECT t.id, t.posted, t.amount, t.description, t.pending, c.name as category,
                     COALESCE(a.nickname, a.name) as account_name
              FROM transactions t
              LEFT JOIN categories c ON t.category_id = c.id
              JOIN accounts a ON t.account_id = a.id
              WHERE LOWER(t.description) LIKE '%netflix%'
-             ORDER BY t.posted DESC"
-        ).unwrap();
+             ORDER BY t.posted DESC",
+            )
+            .unwrap();
 
         stmt.query_map([], |row| {
             let posted: i64 = row.get(1)?;
-            let date = chrono::Utc.timestamp_opt(posted, 0)
+            let date = chrono::Utc
+                .timestamp_opt(posted, 0)
                 .single()
                 .map(|dt| dt.format("%Y-%m-%d").to_string())
                 .unwrap_or_default();
@@ -188,14 +202,19 @@ fn test_transaction_search_by_description() {
                 reimburser: None,
                 reimbursed_at: None,
             })
-        }).unwrap()
+        })
+        .unwrap()
         .filter_map(|r| r.ok())
         .collect()
     };
 
     // Should find Netflix subscriptions (6 monthly)
     assert_eq!(transactions.len(), 6);
-    assert!(transactions.iter().all(|t| t.description.contains("NETFLIX")));
+    assert!(
+        transactions
+            .iter()
+            .all(|t| t.description.contains("NETFLIX"))
+    );
 }
 
 #[test]
@@ -203,11 +222,13 @@ fn test_transaction_amounts_in_cents() {
     let conn = common::setup_test_db();
 
     // Verify amounts are stored in cents
-    let amount: i64 = conn.query_row(
-        "SELECT amount FROM transactions WHERE description LIKE '%NETFLIX%' LIMIT 1",
-        [],
-        |row| row.get(0),
-    ).unwrap();
+    let amount: i64 = conn
+        .query_row(
+            "SELECT amount FROM transactions WHERE description LIKE '%NETFLIX%' LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
 
     // Netflix is $15.99 = -1599 cents
     assert_eq!(amount, -1599);
@@ -225,11 +246,15 @@ fn test_transactions_with_account_name() {
     }
 
     // Check that nicknames are used when available
-    let credit_txs: Vec<_> = transactions.iter()
+    let credit_txs: Vec<_> = transactions
+        .iter()
         .filter(|t| t.account_name == "Chase Card")
         .collect();
 
-    assert!(credit_txs.len() > 0, "Should find transactions with nickname 'Chase Card'");
+    assert!(
+        credit_txs.len() > 0,
+        "Should find transactions with nickname 'Chase Card'"
+    );
 }
 
 use chrono::TimeZone;

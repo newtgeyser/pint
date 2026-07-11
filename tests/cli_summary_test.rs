@@ -103,7 +103,8 @@ fn test_net_worth_calculation() {
     // Net worth = cash + brokerage + retirement + assets + credit
     // = 3,800,000 + 15,000,000 + 45,000,000 + 58,700,000 + (-185,000)
     // = 122,315,000 cents = $1,223,150
-    let expected = summary.cash + summary.brokerage + summary.retirement + summary.assets + summary.credit;
+    let expected =
+        summary.cash + summary.brokerage + summary.retirement + summary.assets + summary.credit;
     assert_eq!(summary.net_worth, expected);
     assert_eq!(summary.net_worth, 122315000);
 }
@@ -125,7 +126,8 @@ fn test_summary_with_updated_account_balance() {
     conn.execute(
         "UPDATE accounts SET balance = 2000000 WHERE id = 'ACT-001-CHECKING'",
         [],
-    ).unwrap();
+    )
+    .unwrap();
 
     let summary = calculate_summary(&conn);
 
@@ -161,7 +163,8 @@ fn test_summary_with_added_asset() {
         "INSERT INTO assets (name, asset_type, value, currency, created_at, updated_at)
          VALUES ('Gold Coins', 'collectible', 500000, 'USD', ?1, ?1)",
         [now],
-    ).unwrap();
+    )
+    .unwrap();
 
     let summary = calculate_summary(&conn);
 
@@ -174,7 +177,8 @@ fn test_summary_with_removed_account() {
     let conn = common::setup_test_db();
 
     // Remove savings account
-    conn.execute("DELETE FROM accounts WHERE id = 'ACT-002-SAVINGS'", []).unwrap();
+    conn.execute("DELETE FROM accounts WHERE id = 'ACT-002-SAVINGS'", [])
+        .unwrap();
 
     let summary = calculate_summary(&conn);
 
@@ -190,7 +194,8 @@ fn test_summary_with_null_balance() {
     conn.execute(
         "UPDATE accounts SET balance = NULL WHERE id = 'ACT-001-CHECKING'",
         [],
-    ).unwrap();
+    )
+    .unwrap();
 
     let summary = calculate_summary(&conn);
 
@@ -206,7 +211,8 @@ fn test_summary_with_null_asset_value() {
     conn.execute(
         "UPDATE assets SET value = NULL WHERE name = 'Art Collection'",
         [],
-    ).unwrap();
+    )
+    .unwrap();
 
     let summary = calculate_summary(&conn);
 
@@ -222,7 +228,8 @@ fn test_summary_credit_reduces_net_worth() {
     conn.execute(
         "UPDATE accounts SET balance = -500000 WHERE id = 'ACT-003-CREDIT'",
         [],
-    ).unwrap();
+    )
+    .unwrap();
 
     let summary = calculate_summary(&conn);
 

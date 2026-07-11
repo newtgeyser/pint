@@ -22,8 +22,10 @@ fn test_categories_sorted_by_name() {
 
     // Should be sorted alphabetically
     for i in 0..categories.len() - 1 {
-        assert!(categories[i].name <= categories[i + 1].name,
-            "Categories should be sorted alphabetically");
+        assert!(
+            categories[i].name <= categories[i + 1].name,
+            "Categories should be sorted alphabetically"
+        );
     }
 }
 
@@ -76,8 +78,12 @@ fn test_rules_sorted_by_pattern() {
 
     // Should be sorted alphabetically by pattern
     for i in 0..rules.len() - 1 {
-        assert!(rules[i].pattern <= rules[i + 1].pattern,
-            "Rules should be sorted by pattern: {} vs {}", rules[i].pattern, rules[i + 1].pattern);
+        assert!(
+            rules[i].pattern <= rules[i + 1].pattern,
+            "Rules should be sorted by pattern: {} vs {}",
+            rules[i].pattern,
+            rules[i + 1].pattern
+        );
     }
 }
 
@@ -185,7 +191,9 @@ fn test_update_rule_category() {
     MerchantRule::upsert(&conn, "NETFLIX", "substring", new_category_id).unwrap();
 
     // Verify the change
-    let rule = RuleRow::find_for_description(&conn, "NETFLIX.COM").unwrap().unwrap();
+    let rule = RuleRow::find_for_description(&conn, "NETFLIX.COM")
+        .unwrap()
+        .unwrap();
     assert_eq!(rule.category, "Entertainment");
 }
 
@@ -214,28 +222,38 @@ fn test_apply_rule_to_transactions() {
     conn.execute(
         "UPDATE transactions SET category_id = NULL WHERE description LIKE '%AMAZON%'",
         [],
-    ).unwrap();
+    )
+    .unwrap();
 
     // Verify they're now uncategorized
     let amazon_txs = TransactionRow::find_all(&conn, None, 1000).unwrap();
-    let uncategorized_amazon: Vec<_> = amazon_txs.iter()
+    let uncategorized_amazon: Vec<_> = amazon_txs
+        .iter()
         .filter(|t| t.description.contains("AMAZON") && t.category.is_none())
         .collect();
-    assert!(uncategorized_amazon.len() > 0, "Should have uncategorized Amazon transactions");
+    assert!(
+        uncategorized_amazon.len() > 0,
+        "Should have uncategorized Amazon transactions"
+    );
 
     // Get Shopping category ID
     let shopping_id = common::get_category_id(&conn, "Shopping").unwrap();
 
     // Apply new rule for Amazon
-    let count = MerchantRule::apply_to_transactions(&conn, "AMAZON", "substring", shopping_id).unwrap();
+    let count =
+        MerchantRule::apply_to_transactions(&conn, "AMAZON", "substring", shopping_id).unwrap();
     assert!(count > 0, "Should have updated some transactions");
 
     // Verify the transactions are now categorized
     let amazon_txs = TransactionRow::find_all(&conn, None, 1000).unwrap();
-    let categorized_amazon: Vec<_> = amazon_txs.iter()
+    let categorized_amazon: Vec<_> = amazon_txs
+        .iter()
         .filter(|t| t.description.contains("AMAZON") && t.category.as_deref() == Some("Shopping"))
         .collect();
-    assert!(categorized_amazon.len() > 0, "Amazon transactions should now be categorized");
+    assert!(
+        categorized_amazon.len() > 0,
+        "Amazon transactions should now be categorized"
+    );
 }
 
 #[test]
@@ -296,7 +314,8 @@ fn test_add_new_category() {
     conn.execute(
         "INSERT INTO categories (name, created_at) VALUES ('Pets', ?1)",
         [now],
-    ).unwrap();
+    )
+    .unwrap();
 
     let categories = Category::find_all(&conn).unwrap();
     assert_eq!(categories.len(), initial_count + 1);
@@ -324,9 +343,7 @@ fn test_multiple_rules_same_category() {
     let rules = RuleRow::find_all(&conn).unwrap();
 
     // Multiple grocery rules should all point to Groceries
-    let grocery_rules: Vec<_> = rules.iter()
-        .filter(|r| r.category == "Groceries")
-        .collect();
+    let grocery_rules: Vec<_> = rules.iter().filter(|r| r.category == "Groceries").collect();
 
     // WHOLE FOODS, TRADER JOES, SAFEWAY, COSTCO
     assert_eq!(grocery_rules.len(), 4);
@@ -349,7 +366,11 @@ fn test_rule_match_modes() {
 
     assert!(substring_rules > 0, "Should have substring rules");
     assert!(token_rules > 0, "Should have token rules");
-    assert_eq!(substring_rules + token_rules, rules.len(), "All rules should be substring or token");
+    assert_eq!(
+        substring_rules + token_rules,
+        rules.len(),
+        "All rules should be substring or token"
+    );
 }
 
 #[test]

@@ -122,6 +122,17 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
             name TEXT NOT NULL COLLATE NOCASE UNIQUE,
             created_at INTEGER NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS net_worth_snapshots (
+            snapshot_date TEXT PRIMARY KEY,
+            captured_at INTEGER NOT NULL,
+            cash INTEGER NOT NULL,
+            brokerage INTEGER NOT NULL,
+            retirement INTEGER NOT NULL,
+            assets INTEGER NOT NULL,
+            credit INTEGER NOT NULL,
+            net_worth INTEGER NOT NULL
+        );
         ",
     )?;
 
@@ -352,6 +363,21 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             ON reimbursers(name COLLATE NOCASE);
         ",
     )?;
+
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS net_worth_snapshots (
+            snapshot_date TEXT PRIMARY KEY,
+            captured_at INTEGER NOT NULL,
+            cash INTEGER NOT NULL,
+            brokerage INTEGER NOT NULL,
+            retirement INTEGER NOT NULL,
+            assets INTEGER NOT NULL,
+            credit INTEGER NOT NULL,
+            net_worth INTEGER NOT NULL
+        );",
+    )?;
+
+    crate::db::reimbursements::migrate(conn)?;
 
     Ok(())
 }

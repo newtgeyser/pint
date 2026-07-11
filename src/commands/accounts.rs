@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::{TimeZone, Utc};
 use uuid::Uuid;
 
@@ -22,11 +22,16 @@ pub fn run() -> Result<()> {
     let accounts = Account::find_all(&conn)?;
 
     if accounts.is_empty() {
-        println!("No accounts found. Run 'pint sync' to fetch accounts or 'pint accounts add' to create one.");
+        println!(
+            "No accounts found. Run 'pint sync' to fetch accounts or 'pint accounts add' to create one."
+        );
         return Ok(());
     }
 
-    println!("{:<12} {:<14} {:<28} {:>12} {:>4}  AS OF", "ID", "TYPE", "ACCOUNT", "BALANCE", "CUR");
+    println!(
+        "{:<12} {:<14} {:<28} {:>12} {:>4}  AS OF",
+        "ID", "TYPE", "ACCOUNT", "BALANCE", "CUR"
+    );
     println!("{}", "-".repeat(88));
 
     let mut total_balance = 0i64;
@@ -113,7 +118,11 @@ pub fn add_quiet(name: &str, account_type: &str, quiet: bool) -> Result<()> {
     )?;
 
     if !quiet {
-        println!("Created manual account '{}' (ID: {})", name, truncate(&id, 12));
+        println!(
+            "Created manual account '{}' (ID: {})",
+            name,
+            truncate(&id, 12)
+        );
     }
     Ok(())
 }
@@ -130,16 +139,12 @@ pub fn remove_quiet(account_query: &str, quiet: bool) -> Result<()> {
             let id = &account.id;
             let name = account.display_name();
             // Delete associated transactions first
-            let txns_deleted = conn.execute(
-                "DELETE FROM transactions WHERE account_id = ?1",
-                [&id],
-            )?;
+            let txns_deleted =
+                conn.execute("DELETE FROM transactions WHERE account_id = ?1", [&id])?;
 
             // Delete associated holdings
-            let holdings_deleted = conn.execute(
-                "DELETE FROM holdings WHERE account_id = ?1",
-                [&id],
-            )?;
+            let holdings_deleted =
+                conn.execute("DELETE FROM holdings WHERE account_id = ?1", [&id])?;
 
             conn.execute("DELETE FROM accounts WHERE id = ?1", [&id])?;
 
@@ -162,7 +167,6 @@ pub fn remove_quiet(account_query: &str, quiet: bool) -> Result<()> {
         None => bail!("No account found matching '{}'", account_query),
     }
 }
-
 
 pub fn set_type(account_query: &str, account_type: &str) -> Result<()> {
     set_type_quiet(account_query, account_type, false)
@@ -187,7 +191,11 @@ pub fn set_type_quiet(account_query: &str, account_type: &str, quiet: bool) -> R
                 rusqlite::params![account_type, Utc::now().timestamp(), account.id],
             )?;
             if !quiet {
-                println!("Set account '{}' type to '{}'", account.display_name(), account_type);
+                println!(
+                    "Set account '{}' type to '{}'",
+                    account.display_name(),
+                    account_type
+                );
             }
             Ok(())
         }

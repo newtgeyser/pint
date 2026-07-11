@@ -75,8 +75,8 @@ pub fn run() -> Result<()> {
 pub fn import_default_rules(conn: &Connection) -> Result<(usize, usize)> {
     use std::collections::HashSet;
 
-    let config: RulesConfig = toml::from_str(DEFAULT_RULES)
-        .context("Failed to parse embedded default rules")?;
+    let config: RulesConfig =
+        toml::from_str(DEFAULT_RULES).context("Failed to parse embedded default rules")?;
 
     // Get existing categories before import
     let existing: HashSet<String> = conn
@@ -114,16 +114,16 @@ pub fn auto_categorize_all(conn: &Connection) -> Result<usize> {
     let rules = db::list_merchant_rules(conn)?;
 
     let tx_ids: Vec<(String, String)> = {
-        let mut stmt = conn.prepare(
-            "SELECT id, description FROM transactions WHERE category_id IS NULL",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT id, description FROM transactions WHERE category_id IS NULL")?;
 
         stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<Result<Vec<_>, _>>()?
     };
 
     for (tx_id, description) in tx_ids {
-        if let Some(category_id) = db::find_category_for_description_with_rules(&description, &rules)
+        if let Some(category_id) =
+            db::find_category_for_description_with_rules(&description, &rules)
         {
             db::categorize_transaction(conn, &tx_id, category_id)?;
             categorized += 1;

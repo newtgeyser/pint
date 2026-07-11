@@ -72,6 +72,9 @@ pint tui
 |---------|-------------|
 | `pint transactions` | List transactions with filters |
 | `pint recurring` | Show detected recurring transactions |
+| `pint review` | Group uncategorized transactions by merchant |
+| `pint history` | Show daily net-worth snapshots |
+| `pint health` | Report stale and incomplete financial data |
 
 #### Transaction Filters
 
@@ -84,6 +87,16 @@ pint transactions --category Groceries      # Filter by category
 pint transactions --uncategorized           # Show uncategorized only
 pint transactions --limit 100               # Limit results (default: 50)
 ```
+
+#### Uncategorized Review
+
+```bash
+pint review
+pint review categorize "ACME COFFEE" "Restaurants" --rule
+pint review categorize "UTILITY CO" "Utilities" --rule --pattern "UTILITY CO"
+```
+
+Review groups repeated uncategorized descriptions into merchant-level work items. Categorizing a group updates all matching uncategorized transactions atomically and can create a rule for future imports.
 
 ### Categorization
 
@@ -155,6 +168,18 @@ Track expenses that should be paid back by an entity (employer, your own LLC, a 
 | `pint reimbursable --pending` | Only outstanding (not yet repaid) |
 | `pint reimbursable --paid` | Only already reimbursed |
 | `pint reimbursable --entity <name>` | Filter by entity |
+| `pint reimbursements aging` | Show outstanding balances by age and entity |
+| `pint reimbursements payment <entity> <amount>` | Record a reimbursement payment |
+
+Payments can be partially or fully allocated to multiple expenses:
+
+```bash
+pint reimbursements payment Employer 250.00 \
+  --date 2026-07-10 \
+  --reference ACH-123 \
+  --allocate tx-id-1=100.00 \
+  --allocate tx-id-2=150.00
+```
 
 In the TUI, on the Transactions view: press `r` to mark/clear reimbursable on the selected row, and `p` to toggle paid/pending status. Reimbursable rows show a colored badge: yellow `[E:Employer]` for pending, green `[$:Employer]` for paid.
 
@@ -215,6 +240,14 @@ Claude will read your credentials, log into each bank sequentially, scrape rewar
 - **Accounts** — balances across all accounts
 - **Transactions** — searchable, filterable transaction list
 - **Recurring** — detected recurring expenses with frequency and average amounts
+
+Recurring forecasts support weekly, biweekly, monthly, bi-monthly, quarterly, and annual schedules, including expected dates, overdue/inactive status, amount variance, and normalized monthly commitment.
+
+### History and Data Health
+
+Pint captures one net-worth snapshot per day after successful syncs. Run `pint history --capture` to create or refresh today's snapshot manually. The TUI summary shows changes against prior snapshots.
+
+`pint health` reports stale balances, missing holding prices or cost bases, missing asset values, uncategorized transactions, and aged pending reimbursements. Reimbursable transactions are excluded from the TUI's personal-spending summary.
 
 ## Data Location
 

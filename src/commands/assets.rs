@@ -1,15 +1,10 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::Utc;
 
 use crate::db::{self, models::Asset};
 use crate::util::truncate;
 
-pub const VALID_ASSET_TYPES: &[&str] = &[
-    "real_estate",
-    "vehicle",
-    "collectible",
-    "other",
-];
+pub const VALID_ASSET_TYPES: &[&str] = &["real_estate", "vehicle", "collectible", "other"];
 
 pub fn validate_asset_type(t: &str) -> Result<&'static str> {
     let lower = t.to_lowercase().replace(['-', ' '], "_");
@@ -154,24 +149,42 @@ pub fn update(
 
     let now = Utc::now().timestamp();
 
-    conn.execute("UPDATE assets SET updated_at = ?1 WHERE id = ?2", rusqlite::params![now, id])?;
+    conn.execute(
+        "UPDATE assets SET updated_at = ?1 WHERE id = ?2",
+        rusqlite::params![now, id],
+    )?;
 
     if let Some(n) = name {
-        conn.execute("UPDATE assets SET name = ?1 WHERE id = ?2", rusqlite::params![n, id])?;
+        conn.execute(
+            "UPDATE assets SET name = ?1 WHERE id = ?2",
+            rusqlite::params![n, id],
+        )?;
     }
     if let Some(v) = value {
         let cents = (v * 100.0).round() as i64;
-        conn.execute("UPDATE assets SET value = ?1 WHERE id = ?2", rusqlite::params![cents, id])?;
+        conn.execute(
+            "UPDATE assets SET value = ?1 WHERE id = ?2",
+            rusqlite::params![cents, id],
+        )?;
     }
     if let Some(c) = cost {
         let cents = (c * 100.0).round() as i64;
-        conn.execute("UPDATE assets SET cost_basis = ?1 WHERE id = ?2", rusqlite::params![cents, id])?;
+        conn.execute(
+            "UPDATE assets SET cost_basis = ?1 WHERE id = ?2",
+            rusqlite::params![cents, id],
+        )?;
     }
     if let Some(d) = description {
-        conn.execute("UPDATE assets SET description = ?1 WHERE id = ?2", rusqlite::params![d, id])?;
+        conn.execute(
+            "UPDATE assets SET description = ?1 WHERE id = ?2",
+            rusqlite::params![d, id],
+        )?;
     }
     if let Some(t) = validated_type {
-        conn.execute("UPDATE assets SET asset_type = ?1 WHERE id = ?2", rusqlite::params![t, id])?;
+        conn.execute(
+            "UPDATE assets SET asset_type = ?1 WHERE id = ?2",
+            rusqlite::params![t, id],
+        )?;
     }
 
     println!("Updated asset ID {}", id);

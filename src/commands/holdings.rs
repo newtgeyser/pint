@@ -1,8 +1,11 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::Utc;
 use std::cmp::Ordering;
 
-use crate::db::{self, models::{Account, Holding}};
+use crate::db::{
+    self,
+    models::{Account, Holding},
+};
 use crate::util::truncate;
 
 /// Update account balance to sum of holdings market values
@@ -302,8 +305,10 @@ pub fn remove(holding_query: &str) -> Result<()> {
 
     update_account_balance(&conn, &holding.account_id)?;
 
-    println!("Removed holding {}", holding.symbol.as_deref().unwrap_or(&holding.id));
+    println!(
+        "Removed holding {}",
+        holding.symbol.as_deref().unwrap_or(&holding.id)
+    );
 
     Ok(())
 }
-

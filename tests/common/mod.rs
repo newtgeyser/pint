@@ -43,11 +43,9 @@ fn populate_synthetic_data(conn: &Connection) {
 
     // Helper to get category ID
     let cat_id = |name: &str| -> i64 {
-        conn.query_row(
-            "SELECT id FROM categories WHERE name = ?1",
-            [name],
-            |row| row.get(0),
-        )
+        conn.query_row("SELECT id FROM categories WHERE name = ?1", [name], |row| {
+            row.get(0)
+        })
         .unwrap()
     };
 
@@ -332,16 +330,53 @@ fn populate_synthetic_data(conn: &Connection) {
             "INSERT INTO merchant_rules (pattern, match_mode, category_id, created_at)
              VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![pattern.to_uppercase(), match_mode, cat_id(category), now],
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     // ========== HOLDINGS ==========
     // Brokerage holdings
     let brokerage_holdings = [
-        ("HOLD-001", "ACT-004-BROKERAGE", "VTI", "Vanguard Total Stock Market ETF", "50.000", 22500, 1000000, 1125000),
-        ("HOLD-002", "ACT-004-BROKERAGE", "VXUS", "Vanguard Total International Stock ETF", "75.000", 5800, 400000, 435000),
-        ("HOLD-003", "ACT-004-BROKERAGE", "BND", "Vanguard Total Bond Market ETF", "100.000", 7200, 700000, 720000),
-        ("HOLD-004", "ACT-004-BROKERAGE", "AAPL", "Apple Inc.", "25.000", 17500, 350000, 437500),
+        (
+            "HOLD-001",
+            "ACT-004-BROKERAGE",
+            "VTI",
+            "Vanguard Total Stock Market ETF",
+            "50.000",
+            22500,
+            1000000,
+            1125000,
+        ),
+        (
+            "HOLD-002",
+            "ACT-004-BROKERAGE",
+            "VXUS",
+            "Vanguard Total International Stock ETF",
+            "75.000",
+            5800,
+            400000,
+            435000,
+        ),
+        (
+            "HOLD-003",
+            "ACT-004-BROKERAGE",
+            "BND",
+            "Vanguard Total Bond Market ETF",
+            "100.000",
+            7200,
+            700000,
+            720000,
+        ),
+        (
+            "HOLD-004",
+            "ACT-004-BROKERAGE",
+            "AAPL",
+            "Apple Inc.",
+            "25.000",
+            17500,
+            350000,
+            437500,
+        ),
     ];
     for (id, account, symbol, desc, shares, price, cost, value) in &brokerage_holdings {
         conn.execute(
@@ -353,9 +388,36 @@ fn populate_synthetic_data(conn: &Connection) {
 
     // 401k holdings
     let retirement_holdings = [
-        ("HOLD-101", "ACT-005-401K", "FXAIX", "Fidelity 500 Index Fund", "150.000", 18000, 2200000, 2700000),
-        ("HOLD-102", "ACT-005-401K", "FXNAX", "Fidelity US Bond Index Fund", "200.000", 1050, 200000, 210000),
-        ("HOLD-103", "ACT-005-401K", "FSPSX", "Fidelity International Index Fund", "100.000", 4500, 400000, 450000),
+        (
+            "HOLD-101",
+            "ACT-005-401K",
+            "FXAIX",
+            "Fidelity 500 Index Fund",
+            "150.000",
+            18000,
+            2200000,
+            2700000,
+        ),
+        (
+            "HOLD-102",
+            "ACT-005-401K",
+            "FXNAX",
+            "Fidelity US Bond Index Fund",
+            "200.000",
+            1050,
+            200000,
+            210000,
+        ),
+        (
+            "HOLD-103",
+            "ACT-005-401K",
+            "FSPSX",
+            "Fidelity International Index Fund",
+            "100.000",
+            4500,
+            400000,
+            450000,
+        ),
     ];
     for (id, account, symbol, desc, shares, price, cost, value) in &retirement_holdings {
         conn.execute(
@@ -367,9 +429,27 @@ fn populate_synthetic_data(conn: &Connection) {
 
     // ========== ASSETS ==========
     let assets = [
-        ("Primary Residence", "real_estate", "123 Main Street, Anytown USA", 55000000, 35000000),
-        ("2020 Toyota Camry", "vehicle", "VIN: 1234567890", 2200000, 2800000),
-        ("Art Collection", "collectible", "Various pieces", 1500000, 800000),
+        (
+            "Primary Residence",
+            "real_estate",
+            "123 Main Street, Anytown USA",
+            55000000,
+            35000000,
+        ),
+        (
+            "2020 Toyota Camry",
+            "vehicle",
+            "VIN: 1234567890",
+            2200000,
+            2800000,
+        ),
+        (
+            "Art Collection",
+            "collectible",
+            "Various pieces",
+            1500000,
+            800000,
+        ),
     ];
     for (name, asset_type, desc, value, cost) in &assets {
         conn.execute(
@@ -390,22 +470,23 @@ fn populate_synthetic_data(conn: &Connection) {
             "INSERT INTO rewards_points (program, points, note, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?4)",
             rusqlite::params![program, points, note, now],
-        ).unwrap();
+        )
+        .unwrap();
     }
 }
 
 /// Get the count of records in a table.
 pub fn count_records(conn: &Connection, table: &str) -> i64 {
-    conn.query_row(&format!("SELECT COUNT(*) FROM {}", table), [], |row| row.get(0))
-        .unwrap()
+    conn.query_row(&format!("SELECT COUNT(*) FROM {}", table), [], |row| {
+        row.get(0)
+    })
+    .unwrap()
 }
 
 /// Get a category ID by name.
 pub fn get_category_id(conn: &Connection, name: &str) -> Option<i64> {
-    conn.query_row(
-        "SELECT id FROM categories WHERE name = ?1",
-        [name],
-        |row| row.get(0),
-    )
+    conn.query_row("SELECT id FROM categories WHERE name = ?1", [name], |row| {
+        row.get(0)
+    })
     .ok()
 }

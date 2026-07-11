@@ -2,7 +2,10 @@ use anyhow::Result;
 use ratatui::widgets::TableState;
 use rusqlite::Connection;
 
-use crate::db::models::{Account, Asset, Category, Holding, MerchantRule, RecurringPattern, Reimburser, RuleRow, Transaction, TransactionRow};
+use crate::db::models::{
+    Account, Asset, Category, Holding, MerchantRule, RecurringPattern, Reimburser, RuleRow,
+    Transaction, TransactionRow,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -59,20 +62,11 @@ impl View {
 #[derive(Clone, PartialEq, Eq)]
 pub enum DialogType {
     /// Non-interactive info/progress message
-    Info {
-        title: String,
-        message: String,
-    },
+    Info { title: String, message: String },
     /// Confirmation dialog (e.g., delete confirmation)
-    Confirm {
-        title: String,
-        message: String,
-    },
+    Confirm { title: String, message: String },
     /// Single text input
-    Input {
-        title: String,
-        prompt: String,
-    },
+    Input { title: String, prompt: String },
     /// Two text inputs (e.g., add account: name + type)
     TwoInputs {
         title: String,
@@ -151,13 +145,15 @@ pub enum DialogAction {
 /// Summary data aggregated by account type
 #[derive(Default)]
 pub struct SummaryData {
-    pub cash: i64,        // checking + savings
-    pub brokerage: i64,   // brokerage accounts
-    pub retirement: i64,  // retirement accounts
-    pub assets: i64,      // manual assets
-    pub credit: i64,      // credit cards (negative)
-    pub net_worth: i64,   // total
+    pub cash: i64,                             // checking + savings
+    pub brokerage: i64,                        // brokerage accounts
+    pub retirement: i64,                       // retirement accounts
+    pub assets: i64,                           // manual assets
+    pub credit: i64,                           // credit cards (negative)
+    pub net_worth: i64,                        // total
     pub category_spending: Vec<(String, i64)>, // (category_name, total_cents) - top 8 by spending
+    pub previous_net_worth: Option<i64>,
+    pub health_issues: i64,
 }
 
 pub struct App {
@@ -201,7 +197,6 @@ pub struct App {
     // Pending sync operation (triggered after next render)
     pub pending_sync: bool,
 }
-
 
 impl App {
     pub fn new(conn: Connection) -> Self {
@@ -269,7 +264,7 @@ impl App {
                 "brokerage" => brokerage += balance,
                 "retirement" => retirement += balance,
                 "credit" => credit += balance, // already negative
-                _ => {} // loan, unknown, etc. - skip for now
+                _ => {}                        // loan, unknown, etc. - skip for now
             }
         }
 
@@ -279,6 +274,12 @@ impl App {
 
         // Load category spending for last 3 months
         let category_spending = self.load_category_spending()?;
+        let history = crate::db::insights::NetWorthSnapshot::history(&self.conn, 2)?;
+        let previous_net_worth = history
+            .iter()
+            .find(|snapshot| snapshot.net_worth != net_worth)
+            .map(|snapshot| snapshot.net_worth);
+        let health_issues = crate::db::insights::DataHealth::load(&self.conn)?.issue_count();
 
         self.summary = SummaryData {
             cash,
@@ -288,6 +289,8 @@ impl App {
             credit,
             net_worth,
             category_spending,
+            previous_net_worth,
+            health_issues,
         };
 
         Ok(())
@@ -312,17 +315,21 @@ impl App {
              WHERE t.amount < 0
                AND t.posted >= ?1
                AND t.pending = 0
+               AND t.reimburser_id IS NULL
                AND a.account_type IN ('checking', 'savings', 'credit')
                AND (c.name IS NULL OR LOWER(c.name) != 'transfers')
              GROUP BY c.name
-             ORDER BY SUM(t.amount) ASC"
+             ORDER BY SUM(t.amount) ASC",
         )?;
 
         let mut spending: Vec<(String, i64)> = stmt
             .query_map([cutoff], |row| {
                 let name: Option<String> = row.get(0)?;
                 let total: i64 = row.get(1)?;
-                Ok((name.unwrap_or_else(|| "Uncategorized".to_string()), total.abs()))
+                Ok((
+                    name.unwrap_or_else(|| "Uncategorized".to_string()),
+                    total.abs(),
+                ))
             })?
             .filter_map(|r| r.ok())
             .collect();
@@ -347,21 +354,26 @@ impl App {
     }
 
     fn load_transactions(&mut self) -> Result<()> {
-        self.transactions = TransactionRow::find_all(&self.conn, self.filter_account.as_deref(), 2000)?;
+        self.transactions =
+            TransactionRow::find_all(&self.conn, self.filter_account.as_deref(), 2000)?;
 
         // Apply search filter (UI-specific, in-memory)
         if !self.search_query.is_empty() {
             let query_lower = self.search_query.to_lowercase();
             self.transactions.retain(|t| {
                 t.description.to_lowercase().contains(&query_lower)
-                    || t.category.as_ref().map(|c| c.to_lowercase().contains(&query_lower)).unwrap_or(false)
+                    || t.category
+                        .as_ref()
+                        .map(|c| c.to_lowercase().contains(&query_lower))
+                        .unwrap_or(false)
             });
         }
 
         if !self.transactions.is_empty() {
             let selected = self.transactions_state.selected().unwrap_or(0);
             if selected >= self.transactions.len() {
-                self.transactions_state.select(Some(self.transactions.len() - 1));
+                self.transactions_state
+                    .select(Some(self.transactions.len() - 1));
             }
         }
         Ok(())
@@ -588,7 +600,12 @@ impl App {
         self.show_dialog_with_value(dialog_type, action, String::new());
     }
 
-    pub fn show_dialog_with_value(&mut self, dialog_type: DialogType, action: DialogAction, prefill: String) {
+    pub fn show_dialog_with_value(
+        &mut self,
+        dialog_type: DialogType,
+        action: DialogAction,
+        prefill: String,
+    ) {
         let cursor1 = prefill.len();
         self.dialog = Some(Dialog {
             dialog_type,
@@ -710,23 +727,21 @@ impl App {
                         dialog.input2.remove(dialog.cursor2);
                     }
                 }
-                DialogType::HoldingEditor { focused_field, .. } => {
-                    match *focused_field {
-                        0 if dialog.cursor1 > 0 => {
-                            dialog.cursor1 -= 1;
-                            dialog.input1.remove(dialog.cursor1);
-                        }
-                        1 if dialog.cursor2 > 0 => {
-                            dialog.cursor2 -= 1;
-                            dialog.input2.remove(dialog.cursor2);
-                        }
-                        2 if dialog.cursor3 > 0 => {
-                            dialog.cursor3 -= 1;
-                            dialog.input3.remove(dialog.cursor3);
-                        }
-                        _ => {}
+                DialogType::HoldingEditor { focused_field, .. } => match *focused_field {
+                    0 if dialog.cursor1 > 0 => {
+                        dialog.cursor1 -= 1;
+                        dialog.input1.remove(dialog.cursor1);
                     }
-                }
+                    1 if dialog.cursor2 > 0 => {
+                        dialog.cursor2 -= 1;
+                        dialog.input2.remove(dialog.cursor2);
+                    }
+                    2 if dialog.cursor3 > 0 => {
+                        dialog.cursor3 -= 1;
+                        dialog.input3.remove(dialog.cursor3);
+                    }
+                    _ => {}
+                },
             }
         }
     }
@@ -759,14 +774,12 @@ impl App {
                         dialog.cursor2 -= 1;
                     }
                 }
-                DialogType::HoldingEditor { focused_field, .. } => {
-                    match *focused_field {
-                        0 if dialog.cursor1 > 0 => dialog.cursor1 -= 1,
-                        1 if dialog.cursor2 > 0 => dialog.cursor2 -= 1,
-                        2 if dialog.cursor3 > 0 => dialog.cursor3 -= 1,
-                        _ => {}
-                    }
-                }
+                DialogType::HoldingEditor { focused_field, .. } => match *focused_field {
+                    0 if dialog.cursor1 > 0 => dialog.cursor1 -= 1,
+                    1 if dialog.cursor2 > 0 => dialog.cursor2 -= 1,
+                    2 if dialog.cursor3 > 0 => dialog.cursor3 -= 1,
+                    _ => {}
+                },
             }
         }
     }
@@ -799,14 +812,12 @@ impl App {
                         dialog.cursor2 += 1;
                     }
                 }
-                DialogType::HoldingEditor { focused_field, .. } => {
-                    match *focused_field {
-                        0 if dialog.cursor1 < dialog.input1.len() => dialog.cursor1 += 1,
-                        1 if dialog.cursor2 < dialog.input2.len() => dialog.cursor2 += 1,
-                        2 if dialog.cursor3 < dialog.input3.len() => dialog.cursor3 += 1,
-                        _ => {}
-                    }
-                }
+                DialogType::HoldingEditor { focused_field, .. } => match *focused_field {
+                    0 if dialog.cursor1 < dialog.input1.len() => dialog.cursor1 += 1,
+                    1 if dialog.cursor2 < dialog.input2.len() => dialog.cursor2 += 1,
+                    2 if dialog.cursor3 < dialog.input3.len() => dialog.cursor3 += 1,
+                    _ => {}
+                },
             }
         }
     }
@@ -819,7 +830,12 @@ impl App {
                         *selected -= 1;
                     }
                 }
-                DialogType::RuleEditor { focused_field, match_mode, selected_category, .. } => {
+                DialogType::RuleEditor {
+                    focused_field,
+                    match_mode,
+                    selected_category,
+                    ..
+                } => {
                     match *focused_field {
                         1 => {
                             // Match mode: toggle between 0 and 1
@@ -836,7 +852,11 @@ impl App {
                         _ => {}
                     }
                 }
-                DialogType::AssetEditor { focused_field, selected_type, .. } => {
+                DialogType::AssetEditor {
+                    focused_field,
+                    selected_type,
+                    ..
+                } => {
                     // Type selection (field 1): 4 types available
                     if *focused_field == 1 && *selected_type > 0 {
                         *selected_type -= 1;
@@ -851,18 +871,29 @@ impl App {
         if let Some(ref mut dialog) = self.dialog {
             let filter = dialog.input1.to_lowercase();
             match &mut dialog.dialog_type {
-                DialogType::Select { selected, items, .. } => {
+                DialogType::Select {
+                    selected, items, ..
+                } => {
                     // Count filtered items
                     let filtered_count = if filter.is_empty() {
                         items.len()
                     } else {
-                        items.iter().filter(|(_, name)| name.to_lowercase().contains(&filter)).count()
+                        items
+                            .iter()
+                            .filter(|(_, name)| name.to_lowercase().contains(&filter))
+                            .count()
                     };
                     if *selected < filtered_count.saturating_sub(1) {
                         *selected += 1;
                     }
                 }
-                DialogType::RuleEditor { focused_field, match_mode, selected_category, categories, .. } => {
+                DialogType::RuleEditor {
+                    focused_field,
+                    match_mode,
+                    selected_category,
+                    categories,
+                    ..
+                } => {
                     match *focused_field {
                         1 => {
                             // Match mode: toggle between 0 and 1
@@ -879,7 +910,11 @@ impl App {
                         _ => {}
                     }
                 }
-                DialogType::AssetEditor { focused_field, selected_type, .. } => {
+                DialogType::AssetEditor {
+                    focused_field,
+                    selected_type,
+                    ..
+                } => {
                     // Type selection (field 1): 4 types available (indices 0-3)
                     if *focused_field == 1 && *selected_type < 3 {
                         *selected_type += 1;
@@ -922,7 +957,11 @@ impl App {
                     self.execute_remove_account(&account_id)?;
                 }
                 DialogAction::RenameAccount { account_id } => {
-                    let nickname = if dialog.input1.is_empty() { None } else { Some(dialog.input1.as_str()) };
+                    let nickname = if dialog.input1.is_empty() {
+                        None
+                    } else {
+                        Some(dialog.input1.as_str())
+                    };
                     self.execute_rename_account(&account_id, nickname)?;
                 }
                 DialogAction::SetAccountType { account_id } => {
@@ -932,12 +971,18 @@ impl App {
                 }
                 DialogAction::FilterByAccount => {
                     // For Select dialog, get the selected account ID from filtered list
-                    if let DialogType::Select { items, selected, .. } = &dialog.dialog_type {
+                    if let DialogType::Select {
+                        items, selected, ..
+                    } = &dialog.dialog_type
+                    {
                         let filter = dialog.input1.to_lowercase();
                         let filtered_items: Vec<&(String, String)> = if filter.is_empty() {
                             items.iter().collect()
                         } else {
-                            items.iter().filter(|(_, name)| name.to_lowercase().contains(&filter)).collect()
+                            items
+                                .iter()
+                                .filter(|(_, name)| name.to_lowercase().contains(&filter))
+                                .collect()
                         };
                         if let Some((account_id, _)) = filtered_items.get(*selected) {
                             self.filter_account = Some(account_id.to_string());
@@ -946,53 +991,104 @@ impl App {
                     }
                 }
                 DialogAction::CreateRule { tx_id } => {
-                    if let DialogType::RuleEditor { match_mode, categories, selected_category, .. } = &dialog.dialog_type
+                    if let DialogType::RuleEditor {
+                        match_mode,
+                        categories,
+                        selected_category,
+                        ..
+                    } = &dialog.dialog_type
                         && !dialog.input1.is_empty()
-                        && let Some((category_id, category_name)) = categories.get(*selected_category)
+                        && let Some((category_id, category_name)) =
+                            categories.get(*selected_category)
                     {
-                        let match_str = if *match_mode == 0 { "substring" } else { "token" };
-                        self.execute_create_rule(&tx_id, &dialog.input1, match_str, *category_id, category_name)?;
+                        let match_str = if *match_mode == 0 {
+                            "substring"
+                        } else {
+                            "token"
+                        };
+                        self.execute_create_rule(
+                            &tx_id,
+                            &dialog.input1,
+                            match_str,
+                            *category_id,
+                            category_name,
+                        )?;
                     }
                 }
-                DialogAction::EditRule { rule_pattern, .. } | DialogAction::EditRuleFromList { rule_pattern } => {
-                    if let DialogType::RuleEditor { match_mode, categories, selected_category, .. } = &dialog.dialog_type
+                DialogAction::EditRule { rule_pattern, .. }
+                | DialogAction::EditRuleFromList { rule_pattern } => {
+                    if let DialogType::RuleEditor {
+                        match_mode,
+                        categories,
+                        selected_category,
+                        ..
+                    } = &dialog.dialog_type
                         && !dialog.input1.is_empty()
-                        && let Some((category_id, category_name)) = categories.get(*selected_category)
+                        && let Some((category_id, category_name)) =
+                            categories.get(*selected_category)
                     {
-                        let match_str = if *match_mode == 0 { "substring" } else { "token" };
-                        self.execute_edit_rule(&rule_pattern, &dialog.input1, match_str, *category_id, category_name)?;
+                        let match_str = if *match_mode == 0 {
+                            "substring"
+                        } else {
+                            "token"
+                        };
+                        self.execute_edit_rule(
+                            &rule_pattern,
+                            &dialog.input1,
+                            match_str,
+                            *category_id,
+                            category_name,
+                        )?;
                     }
                 }
                 DialogAction::CategorizeTransaction { tx_id } => {
-                    if let DialogType::Select { items, selected, .. } = &dialog.dialog_type {
+                    if let DialogType::Select {
+                        items, selected, ..
+                    } = &dialog.dialog_type
+                    {
                         // Filter items the same way as rendering to get the correct selection
                         let filter = dialog.input1.to_lowercase();
                         let filtered_items: Vec<&(String, String)> = if filter.is_empty() {
                             items.iter().collect()
                         } else {
-                            items.iter().filter(|(_, name)| name.to_lowercase().contains(&filter)).collect()
+                            items
+                                .iter()
+                                .filter(|(_, name)| name.to_lowercase().contains(&filter))
+                                .collect()
                         };
-                        if let Some((category_id_str, category_name)) = filtered_items.get(*selected)
+                        if let Some((category_id_str, category_name)) =
+                            filtered_items.get(*selected)
                             && let Ok(category_id) = category_id_str.parse::<i64>()
                         {
-                            self.execute_categorize_transaction(&tx_id, category_id, category_name)?;
+                            self.execute_categorize_transaction(
+                                &tx_id,
+                                category_id,
+                                category_name,
+                            )?;
                         }
                     }
                 }
                 DialogAction::MarkReimbursable { tx_id } => {
-                    if let DialogType::Select { items, selected, .. } = &dialog.dialog_type {
+                    if let DialogType::Select {
+                        items, selected, ..
+                    } = &dialog.dialog_type
+                    {
                         let filter = dialog.input1.to_lowercase();
                         let filtered_items: Vec<&(String, String)> = if filter.is_empty() {
                             items.iter().collect()
                         } else {
-                            items.iter().filter(|(_, name)| name.to_lowercase().contains(&filter)).collect()
+                            items
+                                .iter()
+                                .filter(|(_, name)| name.to_lowercase().contains(&filter))
+                                .collect()
                         };
                         if let Some((id_str, name)) = filtered_items.get(*selected) {
                             if id_str == "0" {
                                 // "(none)" — clear marker
                                 Transaction::clear_reimburser(&self.conn, &tx_id)?;
                                 self.load_transactions()?;
-                                self.status = Some(format!("Cleared reimbursable marker on {}", tx_id));
+                                self.status =
+                                    Some(format!("Cleared reimbursable marker on {}", tx_id));
                             } else if let Ok(reimburser_id) = id_str.parse::<i64>() {
                                 Transaction::set_reimburser(&self.conn, &tx_id, reimburser_id)?;
                                 self.load_transactions()?;
@@ -1015,9 +1111,21 @@ impl App {
                     // input1 = symbol, input2 = shares, input3 = price
                     self.execute_edit_holding(
                         &holding_id,
-                        if dialog.input1.is_empty() { None } else { Some(&dialog.input1) },
-                        if dialog.input2.is_empty() { None } else { Some(&dialog.input2) },
-                        if dialog.input3.is_empty() { None } else { Some(&dialog.input3) },
+                        if dialog.input1.is_empty() {
+                            None
+                        } else {
+                            Some(&dialog.input1)
+                        },
+                        if dialog.input2.is_empty() {
+                            None
+                        } else {
+                            Some(&dialog.input2)
+                        },
+                        if dialog.input3.is_empty() {
+                            None
+                        } else {
+                            Some(&dialog.input3)
+                        },
                     )?;
                 }
             }
@@ -1059,7 +1167,10 @@ impl App {
         if let Some(account) = self.accounts.get(selected) {
             let account_id = account.id.clone();
             // Prefill with current nickname, or name if no nickname
-            let current = account.nickname.clone().unwrap_or_else(|| account.name.clone());
+            let current = account
+                .nickname
+                .clone()
+                .unwrap_or_else(|| account.name.clone());
             self.show_dialog_with_value(
                 DialogType::Input {
                     title: "Rename Account".to_string(),
@@ -1122,8 +1233,8 @@ impl App {
                 focused_field: 0,
                 selected_type: 0, // real_estate
             },
-            input1: String::new(),  // name
-            input2: String::new(),  // value
+            input1: String::new(), // name
+            input2: String::new(), // value
             input3: String::new(),
             action: DialogAction::AddAsset,
             cursor1: 0,
@@ -1134,7 +1245,9 @@ impl App {
 
     fn execute_add_asset(&mut self, name: &str, asset_type: &str, value_str: &str) -> Result<()> {
         // Parse value as dollars
-        let value: f64 = value_str.parse().map_err(|_| anyhow::anyhow!("Invalid value"))?;
+        let value: f64 = value_str
+            .parse()
+            .map_err(|_| anyhow::anyhow!("Invalid value"))?;
 
         crate::commands::assets::add(name, asset_type, value, None, None, None)?;
         self.load_assets()?;
@@ -1150,7 +1263,8 @@ impl App {
             let holding_id = holding.id.clone();
             let symbol = holding.symbol.clone().unwrap_or_default();
             let shares = holding.shares.clone();
-            let price = holding.price_dollars()
+            let price = holding
+                .price_dollars()
                 .map(|p| format!("{:.2}", p))
                 .unwrap_or_default();
 
@@ -1209,7 +1323,8 @@ impl App {
 
     pub fn show_filter_account_dialog(&mut self) {
         // Build list of accounts
-        let items: Vec<(String, String)> = self.accounts
+        let items: Vec<(String, String)> = self
+            .accounts
             .iter()
             .map(|a| (a.id.clone(), a.display_name().to_string()))
             .collect();
@@ -1275,7 +1390,12 @@ impl App {
         }
     }
 
-    fn execute_categorize_transaction(&mut self, tx_id: &str, category_id: i64, category_name: &str) -> Result<()> {
+    fn execute_categorize_transaction(
+        &mut self,
+        tx_id: &str,
+        category_id: i64,
+        category_name: &str,
+    ) -> Result<()> {
         Transaction::set_category(&self.conn, tx_id, category_id)?;
 
         self.load_transactions()?;
@@ -1302,7 +1422,8 @@ impl App {
         };
 
         if entities.is_empty() {
-            self.status = Some("No reimbursers defined. Run 'pint reimbursers add <name>'.".to_string());
+            self.status =
+                Some("No reimbursers defined. Run 'pint reimbursers add <name>'.".to_string());
             return;
         }
 
@@ -1345,13 +1466,11 @@ impl App {
         };
         Transaction::set_reimbursed_at(&self.conn, &tx_id, new_ts)?;
         self.load_transactions()?;
-        self.status = Some(
-            if new_ts.is_some() {
-                "Marked as reimbursed".to_string()
-            } else {
-                "Marked as pending".to_string()
-            },
-        );
+        self.status = Some(if new_ts.is_some() {
+            "Marked as reimbursed".to_string()
+        } else {
+            "Marked as pending".to_string()
+        });
         Ok(())
     }
 
@@ -1372,12 +1491,27 @@ impl App {
                 // Find if there's a rule that matches this transaction
                 if let Some(rule) = self.find_rule_for_transaction(&description).cloned() {
                     // Edit existing rule
-                    let action = DialogAction::EditRule { tx_id, rule_pattern: rule.pattern.clone() };
-                    self.show_rule_editor(&rule.pattern, &rule.match_mode, cat_name, "Edit Rule", action);
+                    let action = DialogAction::EditRule {
+                        tx_id,
+                        rule_pattern: rule.pattern.clone(),
+                    };
+                    self.show_rule_editor(
+                        &rule.pattern,
+                        &rule.match_mode,
+                        cat_name,
+                        "Edit Rule",
+                        action,
+                    );
                 } else {
                     // Create new rule (transaction categorized manually perhaps)
                     let action = DialogAction::CreateRule { tx_id };
-                    self.show_rule_editor(&description, "substring", cat_name, "Create Rule", action);
+                    self.show_rule_editor(
+                        &description,
+                        "substring",
+                        cat_name,
+                        "Create Rule",
+                        action,
+                    );
                 }
             } else {
                 // Uncategorized - create new rule
@@ -1399,28 +1533,50 @@ impl App {
         })
     }
 
-    fn execute_create_rule(&mut self, _tx_id: &str, pattern: &str, match_mode: &str, category_id: i64, category_name: &str) -> Result<()> {
+    fn execute_create_rule(
+        &mut self,
+        _tx_id: &str,
+        pattern: &str,
+        match_mode: &str,
+        category_id: i64,
+        category_name: &str,
+    ) -> Result<()> {
         MerchantRule::upsert(&self.conn, pattern, match_mode, category_id)?;
-        let count = MerchantRule::apply_to_transactions(&self.conn, pattern, match_mode, category_id)?;
+        let count =
+            MerchantRule::apply_to_transactions(&self.conn, pattern, match_mode, category_id)?;
 
         // Reload data
         self.load_rules()?;
         self.load_transactions()?;
 
-        self.status = Some(format!("Rule created: '{}' → {} ({} transactions)", pattern, category_name, count));
+        self.status = Some(format!(
+            "Rule created: '{}' → {} ({} transactions)",
+            pattern, category_name, count
+        ));
         Ok(())
     }
 
-    fn execute_edit_rule(&mut self, old_pattern: &str, new_pattern: &str, match_mode: &str, category_id: i64, category_name: &str) -> Result<()> {
+    fn execute_edit_rule(
+        &mut self,
+        old_pattern: &str,
+        new_pattern: &str,
+        match_mode: &str,
+        category_id: i64,
+        category_name: &str,
+    ) -> Result<()> {
         MerchantRule::delete_by_pattern(&self.conn, old_pattern)?;
         MerchantRule::upsert(&self.conn, new_pattern, match_mode, category_id)?;
-        let count = MerchantRule::apply_to_transactions(&self.conn, new_pattern, match_mode, category_id)?;
+        let count =
+            MerchantRule::apply_to_transactions(&self.conn, new_pattern, match_mode, category_id)?;
 
         // Reload data
         self.load_rules()?;
         self.load_transactions()?;
 
-        self.status = Some(format!("Rule updated: '{}' → {} ({} transactions)", new_pattern, category_name, count));
+        self.status = Some(format!(
+            "Rule updated: '{}' → {} ({} transactions)",
+            new_pattern, category_name, count
+        ));
         Ok(())
     }
 
@@ -1428,13 +1584,28 @@ impl App {
     pub fn show_edit_rule_from_list(&mut self) {
         let selected = self.rules_state.selected().unwrap_or(0);
         if let Some(rule) = self.rules.get(selected).cloned() {
-            let action = DialogAction::EditRuleFromList { rule_pattern: rule.pattern.clone() };
-            self.show_rule_editor(&rule.pattern, &rule.match_mode, &rule.category, "Edit Rule", action);
+            let action = DialogAction::EditRuleFromList {
+                rule_pattern: rule.pattern.clone(),
+            };
+            self.show_rule_editor(
+                &rule.pattern,
+                &rule.match_mode,
+                &rule.category,
+                "Edit Rule",
+                action,
+            );
         }
     }
 
     /// Helper to show the rule editor dialog with given parameters
-    fn show_rule_editor(&mut self, pattern: &str, match_mode: &str, category_name: &str, title: &str, action: DialogAction) {
+    fn show_rule_editor(
+        &mut self,
+        pattern: &str,
+        match_mode: &str,
+        category_name: &str,
+        title: &str,
+        action: DialogAction,
+    ) {
         let categories = match Category::find_all_for_select(&self.conn) {
             Ok(cats) => cats,
             Err(_) => {
@@ -1449,7 +1620,8 @@ impl App {
         }
 
         let match_mode_idx = if match_mode == "token" { 1 } else { 0 };
-        let selected_category = categories.iter()
+        let selected_category = categories
+            .iter()
             .position(|(_, name)| name == category_name)
             .unwrap_or(0);
 
@@ -1500,6 +1672,7 @@ impl App {
 
         match sync::run_with_conn(&self.conn, 30) {
             Ok(stats) => {
+                let _ = crate::db::insights::NetWorthSnapshot::capture(&self.conn);
                 self.close_dialog();
                 self.status = Some(stats.summary());
                 let _ = self.load_accounts();

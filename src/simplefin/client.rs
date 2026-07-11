@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use base64::prelude::*;
 use reqwest::blocking::Client;
 use std::time::Duration;

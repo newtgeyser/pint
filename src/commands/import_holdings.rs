@@ -21,10 +21,7 @@ pub fn run(file_path: &Path, account_query: &str) -> Result<()> {
     let mut skipped = 0;
 
     // Delete existing holdings for this account
-    let deleted = conn.execute(
-        "DELETE FROM holdings WHERE account_id = ?1",
-        [&account_id],
-    )?;
+    let deleted = conn.execute("DELETE FROM holdings WHERE account_id = ?1", [&account_id])?;
 
     for result in reader.records() {
         let record = result.context("Failed to parse CSV record")?;
@@ -57,8 +54,16 @@ pub fn run(file_path: &Path, account_query: &str) -> Result<()> {
             format!("{}:{}", account_id, symbol)
         };
 
-        let symbol_val = if symbol.is_empty() { None } else { Some(symbol) };
-        let desc_val = if description.is_empty() { None } else { Some(description) };
+        let symbol_val = if symbol.is_empty() {
+            None
+        } else {
+            Some(symbol)
+        };
+        let desc_val = if description.is_empty() {
+            None
+        } else {
+            Some(description)
+        };
 
         conn.execute(
             "INSERT INTO holdings (id, account_id, symbol, description, shares, price, cost_basis, market_value, currency, created_at, updated_at)
@@ -98,9 +103,15 @@ pub fn run(file_path: &Path, account_query: &str) -> Result<()> {
     )?;
 
     if deleted > 0 {
-        println!("Removed {} existing holdings from '{}'", deleted, account_name);
+        println!(
+            "Removed {} existing holdings from '{}'",
+            deleted, account_name
+        );
     }
-    println!("Imported {} holdings into '{}' ({} skipped)", imported, account_name, skipped);
+    println!(
+        "Imported {} holdings into '{}' ({} skipped)",
+        imported, account_name, skipped
+    );
 
     Ok(())
 }

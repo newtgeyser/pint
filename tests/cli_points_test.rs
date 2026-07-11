@@ -28,8 +28,7 @@ fn test_find_by_program() {
 fn test_find_by_program_case_insensitive() {
     let conn = common::setup_test_db();
 
-    let result = RewardPoints::find_by_program(&conn, "chase sapphire reserve")
-        .unwrap();
+    let result = RewardPoints::find_by_program(&conn, "chase sapphire reserve").unwrap();
     assert!(result.is_some());
 }
 
@@ -37,8 +36,7 @@ fn test_find_by_program_case_insensitive() {
 fn test_find_by_program_not_found() {
     let conn = common::setup_test_db();
 
-    let result = RewardPoints::find_by_program(&conn, "Nonexistent Program")
-        .unwrap();
+    let result = RewardPoints::find_by_program(&conn, "Nonexistent Program").unwrap();
     assert!(result.is_none());
 }
 
@@ -57,7 +55,8 @@ fn test_set_upsert_new() {
             note = COALESCE(excluded.note, rewards_points.note),
             updated_at = excluded.updated_at",
         [now],
-    ).unwrap();
+    )
+    .unwrap();
 
     let programs = RewardPoints::find_all(&conn).unwrap();
     assert_eq!(programs.len(), initial_count + 1);
@@ -83,7 +82,8 @@ fn test_set_upsert_existing() {
             note = COALESCE(excluded.note, rewards_points.note),
             updated_at = excluded.updated_at",
         [now],
-    ).unwrap();
+    )
+    .unwrap();
 
     // Count should be unchanged
     let programs = RewardPoints::find_all(&conn).unwrap();
@@ -106,7 +106,8 @@ fn test_remove_program() {
     conn.execute(
         "DELETE FROM rewards_points WHERE LOWER(program) = LOWER('Chase Amazon Prime')",
         [],
-    ).unwrap();
+    )
+    .unwrap();
 
     let programs = RewardPoints::find_all(&conn).unwrap();
     assert_eq!(programs.len(), initial_count - 1);

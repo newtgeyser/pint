@@ -71,7 +71,7 @@ pub fn update_prices(conn: &Connection) -> Result<PriceUpdateStats> {
         "SELECT h.id, h.symbol, h.shares, h.account_id
          FROM holdings h
          JOIN accounts a ON h.account_id = a.id
-         WHERE a.manual = 1 AND h.symbol IS NOT NULL AND h.symbol != ''"
+         WHERE a.manual = 1 AND h.symbol IS NOT NULL AND h.symbol != ''",
     )?;
 
     let holdings: Vec<(String, String, String, String)> = stmt

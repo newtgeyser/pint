@@ -1,21 +1,21 @@
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Row, Table, HighlightSpacing},
-    Frame,
+    widgets::{Block, Borders, Clear, HighlightSpacing, List, ListItem, Paragraph, Row, Table},
 };
 
-use super::app::{format_amount, App, DialogType, View};
+use super::app::{App, DialogType, View, format_amount};
 use crate::util::truncate;
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Title
-            Constraint::Min(0),     // Content
-            Constraint::Length(3),  // Status bar
+            Constraint::Length(3), // Title
+            Constraint::Min(0),    // Content
+            Constraint::Length(3), // Status bar
         ])
         .split(frame.area());
 
@@ -30,16 +30,28 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 }
 
 fn draw_title(frame: &mut Frame, app: &App, area: Rect) {
-    let account_filter = app.filter_account.as_ref()
+    let account_filter = app
+        .filter_account
+        .as_ref()
         .map(|acc| format!("[{}]", truncate(acc, 20)))
         .unwrap_or_default();
 
-    let left_part = format!(" 🍺 PINT - {}{}", app.current_view.name(),
-        if account_filter.is_empty() { String::new() } else { format!(" {}", account_filter) });
+    let left_part = format!(
+        " 🍺 PINT - {}{}",
+        app.current_view.name(),
+        if account_filter.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", account_filter)
+        }
+    );
 
     let right_part = match app.current_view {
         View::Summary => {
-            format!("💰 Net Worth: ${} ", format_amount(app.summary.net_worth, "USD"))
+            format!(
+                "💰 Net Worth: ${} ",
+                format_amount(app.summary.net_worth, "USD")
+            )
         }
         View::Accounts => {
             let total = app.accounts_total();
@@ -50,7 +62,11 @@ fn draw_title(frame: &mut Frame, app: &App, area: Rect) {
         }
         View::Holdings => {
             let total = app.holdings_total();
-            format!("{} holdings  💰 Total: ${} ", app.holdings.len(), format_amount(total, "USD"))
+            format!(
+                "{} holdings  💰 Total: ${} ",
+                app.holdings.len(),
+                format_amount(total, "USD")
+            )
         }
         View::Assets => {
             let total = app.assets_total();
@@ -71,14 +87,24 @@ fn draw_title(frame: &mut Frame, app: &App, area: Rect) {
     let right_len = right_part.chars().count();
     let padding = available_width.saturating_sub(left_len + right_len);
 
-    let title = format!("{}{:padding$}{}", left_part, "", right_part, padding = padding);
+    let title = format!(
+        "{}{:padding$}{}",
+        left_part,
+        "",
+        right_part,
+        padding = padding
+    );
 
     let title_block = Block::default()
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::Cyan));
 
     let title_text = Paragraph::new(title)
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .block(title_block);
 
     frame.render_widget(title_text, area);
@@ -88,8 +114,8 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(20),  // Navigation (wider for emojis)
-            Constraint::Min(0),      // Main content
+            Constraint::Length(20), // Navigation (wider for emojis)
+            Constraint::Min(0),     // Main content
         ])
         .split(area);
 
@@ -100,23 +126,24 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
 fn draw_navigation(frame: &mut Frame, app: &App, area: Rect) {
     let mut items: Vec<ListItem> = vec![ListItem::new("")]; // Empty line for spacing
 
-    items.extend(View::ALL
-        .iter()
-        .enumerate()
-        .map(|(i, view)| {
-            let style = if i == app.nav_index {
-                if app.nav_focused {
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
-                }
+    items.extend(View::ALL.iter().enumerate().map(|(i, view)| {
+        let style = if i == app.nav_index {
+            if app.nav_focused {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::Gray)
-            };
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            }
+        } else {
+            Style::default().fg(Color::Gray)
+        };
 
-            let prefix = if i == app.nav_index { "▸ " } else { "  " };
-            ListItem::new(format!("{}{}", prefix, view.label())).style(style)
-        }));
+        let prefix = if i == app.nav_index { "▸ " } else { "  " };
+        ListItem::new(format!("{}{}", prefix, view.label())).style(style)
+    }));
 
     let nav_block = Block::default()
         .borders(Borders::ALL)
@@ -174,32 +201,127 @@ fn draw_summary(frame: &mut Frame, app: &App, area: Rect) {
 
     let mut lines = vec![
         Line::from(""),
-        Line::from(Span::styled("  Net Worth Summary", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
-        Line::from(Span::styled("  ─────────────────────────────────", Style::default().fg(Color::DarkGray))),
-        format_row("  Cash", summary.cash, if summary.cash >= 0 { positive_color } else { negative_color }),
-        format_row("  Brokerage", summary.brokerage, if summary.brokerage >= 0 { positive_color } else { negative_color }),
-        format_row("  Retirement", summary.retirement, if summary.retirement >= 0 { positive_color } else { negative_color }),
-        format_row("  Assets", summary.assets, if summary.assets >= 0 { positive_color } else { negative_color }),
-        format_row("  Credit Cards", summary.credit, if summary.credit >= 0 { positive_color } else { negative_color }),
-        Line::from(Span::styled("  ─────────────────────────────────", Style::default().fg(Color::DarkGray))),
+        Line::from(Span::styled(
+            "  Net Worth Summary",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            "  ─────────────────────────────────",
+            Style::default().fg(Color::DarkGray),
+        )),
+        format_row(
+            "  Cash",
+            summary.cash,
+            if summary.cash >= 0 {
+                positive_color
+            } else {
+                negative_color
+            },
+        ),
+        format_row(
+            "  Brokerage",
+            summary.brokerage,
+            if summary.brokerage >= 0 {
+                positive_color
+            } else {
+                negative_color
+            },
+        ),
+        format_row(
+            "  Retirement",
+            summary.retirement,
+            if summary.retirement >= 0 {
+                positive_color
+            } else {
+                negative_color
+            },
+        ),
+        format_row(
+            "  Assets",
+            summary.assets,
+            if summary.assets >= 0 {
+                positive_color
+            } else {
+                negative_color
+            },
+        ),
+        format_row(
+            "  Credit Cards",
+            summary.credit,
+            if summary.credit >= 0 {
+                positive_color
+            } else {
+                negative_color
+            },
+        ),
+        Line::from(Span::styled(
+            "  ─────────────────────────────────",
+            Style::default().fg(Color::DarkGray),
+        )),
         Line::from(""),
         Line::from(vec![
-            Span::styled(format!("{:<20}", "  NET WORTH"), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
             Span::styled(
-                format!("{:>15}", format!("${}", format_amount(summary.net_worth, "USD"))),
+                format!("{:<20}", "  NET WORTH"),
                 Style::default()
-                    .fg(if summary.net_worth >= 0 { Color::Green } else { Color::Red })
-                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(
+                    "{:>15}",
+                    format!("${}", format_amount(summary.net_worth, "USD"))
+                ),
+                Style::default()
+                    .fg(if summary.net_worth >= 0 {
+                        Color::Green
+                    } else {
+                        Color::Red
+                    })
+                    .add_modifier(Modifier::BOLD),
             ),
         ]),
     ];
+
+    if let Some(previous) = summary.previous_net_worth {
+        let change = summary.net_worth - previous;
+        lines.push(Line::from(vec![
+            Span::styled("  Change vs snapshot  ", Style::default().fg(Color::Gray)),
+            Span::styled(
+                format!("{:>15}", format!("${}", format_amount(change, "USD"))),
+                Style::default().fg(if change >= 0 {
+                    Color::Green
+                } else {
+                    Color::Red
+                }),
+            ),
+        ]));
+    }
+    if summary.health_issues > 0 {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "  Data health: {} issue(s) - run `pint health`",
+                summary.health_issues
+            ),
+            Style::default().fg(Color::Yellow),
+        )));
+    }
 
     // Add spending by category section if there are any
     if !summary.category_spending.is_empty() {
         lines.push(Line::from(""));
         lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled("  Spending by Category (Last 90 Days)", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))));
-        lines.push(Line::from(Span::styled("  ──────────────────────────────────────────", Style::default().fg(Color::DarkGray))));
+        lines.push(Line::from(Span::styled(
+            "  Spending by Category (Last 90 Days)",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(Span::styled(
+            "  ──────────────────────────────────────────",
+            Style::default().fg(Color::DarkGray),
+        )));
 
         for (category, amount) in &summary.category_spending {
             let amount_str = format!("${}", format_amount(*amount, "USD"));
@@ -210,8 +332,14 @@ fn draw_summary(frame: &mut Frame, app: &App, area: Rect) {
             };
 
             lines.push(Line::from(vec![
-                Span::styled(format!("  {:<28}", category_display), Style::default().fg(Color::Gray)),
-                Span::styled(format!("{:>12}", amount_str), Style::default().fg(Color::Red)),
+                Span::styled(
+                    format!("  {:<28}", category_display),
+                    Style::default().fg(Color::Gray),
+                ),
+                Span::styled(
+                    format!("{:>12}", amount_str),
+                    Style::default().fg(Color::Red),
+                ),
             ]));
         }
     }
@@ -233,7 +361,11 @@ fn draw_accounts(frame: &mut Frame, app: &mut App, area: Rect) {
     let account_width = area.width.saturating_sub(fixed_width + 3) as usize; // +3 for column spacing
 
     let header = Row::new(vec!["TYPE", "ACCOUNT", "BALANCE", "CUR"])
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .bottom_margin(1);
 
     let rows: Vec<Row> = app
@@ -289,7 +421,11 @@ fn draw_transactions(frame: &mut Frame, app: &mut App, area: Rect) {
     if app.transactions.is_empty() {
         let msg = Paragraph::new(format!(
             "No transactions found.{}",
-            if filter_info.is_empty() { "" } else { &filter_info }
+            if filter_info.is_empty() {
+                ""
+            } else {
+                &filter_info
+            }
         ));
         frame.render_widget(msg, area);
         return;
@@ -301,7 +437,11 @@ fn draw_transactions(frame: &mut Frame, app: &mut App, area: Rect) {
     let desc_width = area.width.saturating_sub(fixed_width + 3) as usize; // +3 for column spacing
 
     let header = Row::new(vec!["DATE", "AMOUNT", "CATEGORY", "DESCRIPTION"])
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .bottom_margin(1);
 
     let rows: Vec<Row> = app
@@ -328,9 +468,15 @@ fn draw_transactions(frame: &mut Frame, app: &mut App, area: Rect) {
             let reserved_for_badge = match tx.reimburser.as_deref() {
                 Some(name) => {
                     let (badge_text, badge_style) = if tx.reimbursed_at.is_some() {
-                        (format!("[$:{}] ", truncate(name, 12)), Style::default().fg(Color::Green))
+                        (
+                            format!("[$:{}] ", truncate(name, 12)),
+                            Style::default().fg(Color::Green),
+                        )
                     } else {
-                        (format!("[E:{}] ", truncate(name, 12)), Style::default().fg(Color::Yellow))
+                        (
+                            format!("[E:{}] ", truncate(name, 12)),
+                            Style::default().fg(Color::Yellow),
+                        )
                     };
                     let len = badge_text.chars().count();
                     desc_spans.push(Span::styled(badge_text, badge_style));
@@ -338,7 +484,9 @@ fn draw_transactions(frame: &mut Frame, app: &mut App, area: Rect) {
                 }
                 None => 0,
             };
-            let remaining = desc_width.saturating_sub(2).saturating_sub(reserved_for_badge);
+            let remaining = desc_width
+                .saturating_sub(2)
+                .saturating_sub(reserved_for_badge);
             desc_spans.push(Span::raw(truncate(&desc, remaining).to_string()));
 
             Row::new(vec![
@@ -376,7 +524,11 @@ fn draw_holdings(frame: &mut Frame, app: &mut App, area: Rect) {
     if app.holdings.is_empty() {
         let msg = Paragraph::new(format!(
             "No holdings found.{}",
-            if filter_info.is_empty() { "" } else { &filter_info }
+            if filter_info.is_empty() {
+                ""
+            } else {
+                &filter_info
+            }
         ));
         frame.render_widget(msg, area);
         return;
@@ -387,9 +539,20 @@ fn draw_holdings(frame: &mut Frame, app: &mut App, area: Rect) {
     let fixed_width: u16 = 10 + 12 + 10 + 12 + 10;
     let desc_width = area.width.saturating_sub(fixed_width + 5) as usize; // +5 for column spacing
 
-    let header = Row::new(vec!["SYMBOL", "DESCRIPTION", "SHARES", "PRICE", "VALUE", "GAIN"])
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-        .bottom_margin(1);
+    let header = Row::new(vec![
+        "SYMBOL",
+        "DESCRIPTION",
+        "SHARES",
+        "PRICE",
+        "VALUE",
+        "GAIN",
+    ])
+    .style(
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )
+    .bottom_margin(1);
 
     let rows: Vec<Row> = app
         .holdings
@@ -398,11 +561,13 @@ fn draw_holdings(frame: &mut Frame, app: &mut App, area: Rect) {
             let symbol = h.symbol.as_deref().unwrap_or("-");
             let desc = h.description.as_deref().unwrap_or("-");
 
-            let price_str = h.price
+            let price_str = h
+                .price
                 .map(|p| format_amount(p, &h.currency))
                 .unwrap_or_else(|| "N/A".to_string());
 
-            let value_str = h.market_value
+            let value_str = h
+                .market_value
                 .map(|v| format_amount(v, &h.currency))
                 .unwrap_or_else(|| "N/A".to_string());
 
@@ -456,18 +621,24 @@ fn draw_assets(frame: &mut Frame, app: &mut App, area: Rect) {
     let name_width = area.width.saturating_sub(fixed_width + 5) as usize; // +5 for column spacing
 
     let header = Row::new(vec!["ID", "TYPE", "NAME", "VALUE", "COST", "GAIN"])
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .bottom_margin(1);
 
     let rows: Vec<Row> = app
         .assets
         .iter()
         .map(|a| {
-            let value_str = a.value
+            let value_str = a
+                .value
                 .map(|v| format_amount(v, &a.currency))
                 .unwrap_or_else(|| "N/A".to_string());
 
-            let cost_str = a.cost_basis
+            let cost_str = a
+                .cost_basis
                 .map(|c| format_amount(c, &a.currency))
                 .unwrap_or_else(|| "N/A".to_string());
 
@@ -510,19 +681,32 @@ fn draw_assets(frame: &mut Frame, app: &mut App, area: Rect) {
 
 fn draw_recurring(frame: &mut Frame, app: &mut App, area: Rect) {
     if app.recurring.is_empty() {
-        let msg = Paragraph::new("No recurring transactions detected.\n\nRecurring transactions are identified by:\n  - At least 3 similar transactions\n  - Consistent intervals (monthly or bi-monthly)");
+        let msg = Paragraph::new(
+            "No recurring transactions detected.\n\nRecurring transactions are identified by:\n  - At least 3 similar transactions\n  - Consistent weekly through annual intervals",
+        );
         frame.render_widget(msg, area);
         return;
     }
 
-    // Fixed columns: AMOUNT(12) + FREQ(12) + COUNT(6) + LAST(12) = 42
+    // Fixed columns leave the remaining width for the merchant and category.
     // MERCHANT gets the remaining space
-    let fixed_width: u16 = 12 + 12 + 6 + 12;
+    let fixed_width: u16 = 11 + 11 + 11 + 12 + 10;
     let merchant_width = area.width.saturating_sub(fixed_width + 4) as usize; // +4 for column spacing
 
-    let header = Row::new(vec!["MERCHANT", "AMOUNT", "FREQUENCY", "COUNT", "LAST"])
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-        .bottom_margin(1);
+    let header = Row::new(vec![
+        "MERCHANT",
+        "AMOUNT",
+        "FREQUENCY",
+        "MONTHLY",
+        "NEXT",
+        "STATUS",
+    ])
+    .style(
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )
+    .bottom_margin(1);
 
     let rows: Vec<Row> = app
         .recurring
@@ -535,17 +719,30 @@ fn draw_recurring(frame: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(Color::Green)
             };
 
-            let category_suffix = r.category
+            let category_suffix = r
+                .category
                 .as_ref()
                 .map(|c| format!(" [{}]", truncate(c, 12)))
                 .unwrap_or_default();
 
             Row::new(vec![
-                Span::raw(format!("{}{}", truncate(&r.merchant, merchant_width.saturating_sub(15)), category_suffix)),
-                Span::styled(format!("{:>12}", amount_str), amount_style),
-                Span::raw(format!("{:>12}", r.frequency)),
-                Span::raw(format!("{:>6}", r.occurrences)),
-                Span::raw(r.last_date.clone()),
+                Span::raw(format!(
+                    "{}{}",
+                    truncate(&r.merchant, merchant_width.saturating_sub(15)),
+                    category_suffix
+                )),
+                Span::styled(format!("{:>11}", amount_str), amount_style),
+                Span::raw(format!("{:>11}", r.frequency)),
+                Span::raw(format!("{:>11.2}", r.monthly_commitment)),
+                Span::raw(r.expected_next_date.clone()),
+                Span::styled(
+                    r.status.clone(),
+                    Style::default().fg(match r.status.as_str() {
+                        "active" => Color::Green,
+                        "overdue" => Color::Yellow,
+                        _ => Color::DarkGray,
+                    }),
+                ),
             ])
         })
         .collect();
@@ -554,10 +751,11 @@ fn draw_recurring(frame: &mut Frame, app: &mut App, area: Rect) {
         rows,
         [
             Constraint::Min(15),
+            Constraint::Length(11),
+            Constraint::Length(11),
+            Constraint::Length(11),
             Constraint::Length(12),
-            Constraint::Length(12),
-            Constraint::Length(6),
-            Constraint::Length(12),
+            Constraint::Length(10),
         ],
     )
     .header(header)
@@ -579,8 +777,8 @@ fn draw_rules(frame: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(6),  // Categories summary
-            Constraint::Min(0),     // Rules list
+            Constraint::Length(6), // Categories summary
+            Constraint::Min(0),    // Rules list
         ])
         .split(area);
 
@@ -589,10 +787,14 @@ fn draw_rules(frame: &mut Frame, app: &mut App, area: Rect) {
     let cat_text = format!(
         "Categories: {} defined\n\nTop categories: {}",
         cat_count,
-        app.categories.iter().take(5).map(|c| c.name.as_str()).collect::<Vec<_>>().join(", ")
+        app.categories
+            .iter()
+            .take(5)
+            .map(|c| c.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
     );
-    let cat_para = Paragraph::new(cat_text)
-        .style(Style::default().fg(Color::Gray));
+    let cat_para = Paragraph::new(cat_text).style(Style::default().fg(Color::Gray));
     frame.render_widget(cat_para, chunks[0]);
 
     // Rules list
@@ -613,7 +815,11 @@ fn draw_rules(frame: &mut Frame, app: &mut App, area: Rect) {
     let pattern_width = chunks[1].width.saturating_sub(fixed_width + 2) as usize; // +2 for column spacing
 
     let header = Row::new(vec!["PATTERN", "MATCH", "CATEGORY"])
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .bottom_margin(1);
 
     let rows: Vec<Row> = app
@@ -660,31 +866,32 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         // Show view-specific commands after user interacts
         match app.current_view {
-            View::Summary => {
-                "s:Sync  Tab:Switch pane  q:Quit".to_string()
-            }
+            View::Summary => "s:Sync  Tab:Switch pane  q:Quit".to_string(),
             View::Accounts => {
-                "s:Sync  a:Add  d:Remove  r:Rename  t:Type  Enter:View  /:Search  q:Quit".to_string()
+                "s:Sync  a:Add  d:Remove  r:Rename  t:Type  Enter:View  /:Search  q:Quit"
+                    .to_string()
             }
             View::Transactions => {
-                let filter_status = if app.filter_account.is_some() || !app.search_query.is_empty() {
+                let filter_status = if app.filter_account.is_some() || !app.search_query.is_empty()
+                {
                     "  c:Clear"
                 } else {
                     ""
                 };
-                format!("e:Edit category  l:Learn rule  r:Reimbursable  p:Toggle paid  /:Search  f:Filter{}  q:Quit", filter_status)
+                format!(
+                    "e:Edit category  l:Learn rule  r:Reimbursable  p:Toggle paid  /:Search  f:Filter{}  q:Quit",
+                    filter_status
+                )
             }
-            View::Holdings => {
-                "e:Edit  q:Quit".to_string()
-            }
-            View::Assets => {
-                "a:Add  d:Remove  e:Edit  q:Quit".to_string()
-            }
-            View::Recurring => {
-                "↑↓:Navigate  q:Quit".to_string()
-            }
+            View::Holdings => "e:Edit  q:Quit".to_string(),
+            View::Assets => "a:Add  d:Remove  e:Edit  q:Quit".to_string(),
+            View::Recurring => "↑↓:Navigate  q:Quit".to_string(),
             View::Rules => {
-                let filter_status = if !app.search_query.is_empty() { "  c:Clear" } else { "" };
+                let filter_status = if !app.search_query.is_empty() {
+                    "  c:Clear"
+                } else {
+                    ""
+                };
                 format!("e:Edit  a:Apply rules  /:Search{}  q:Quit", filter_status)
             }
         }
@@ -717,7 +924,10 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             let filtered_count = if filter.is_empty() {
                 items.len()
             } else {
-                items.iter().filter(|(_, name)| name.to_lowercase().contains(&filter)).count()
+                items
+                    .iter()
+                    .filter(|(_, name)| name.to_lowercase().contains(&filter))
+                    .count()
             };
             // Height: +5 for border, search box, gap, and instructions
             let item_count = filtered_count as u16;
@@ -749,10 +959,7 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             let inner = block.inner(dialog_area);
             frame.render_widget(block, dialog_area);
 
-            let text = vec![
-                Line::from(""),
-                Line::from(message.as_str()),
-            ];
+            let text = vec![Line::from(""), Line::from(message.as_str())];
             let paragraph = Paragraph::new(text)
                 .style(Style::default().bg(Color::Black))
                 .alignment(ratatui::layout::Alignment::Center);
@@ -791,8 +998,12 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             frame.render_widget(block, dialog_area);
 
             // Split input at cursor position
-            let (before, after) = dialog.input1.split_at(dialog.cursor1.min(dialog.input1.len()));
-            let input_style = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
+            let (before, after) = dialog
+                .input1
+                .split_at(dialog.cursor1.min(dialog.input1.len()));
+            let input_style = Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD);
 
             let text = vec![
                 Line::from(Span::raw(prompt.clone())),
@@ -808,7 +1019,12 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             frame.render_widget(paragraph, inner);
         }
 
-        DialogType::TwoInputs { title, prompt1, prompt2, focused } => {
+        DialogType::TwoInputs {
+            title,
+            prompt1,
+            prompt2,
+            focused,
+        } => {
             let block = Block::default()
                 .title(format!(" {} ", title))
                 .borders(Borders::ALL)
@@ -818,20 +1034,26 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             frame.render_widget(block, dialog_area);
 
             let input1_style = if *focused == 0 {
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Gray)
             };
 
             let input2_style = if *focused == 1 {
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Gray)
             };
 
             // Build input1 line with cursor
             let input1_line = if *focused == 0 {
-                let (before, after) = dialog.input1.split_at(dialog.cursor1.min(dialog.input1.len()));
+                let (before, after) = dialog
+                    .input1
+                    .split_at(dialog.cursor1.min(dialog.input1.len()));
                 Line::from(vec![
                     Span::styled(before.to_string(), input1_style),
                     Span::styled("█", input1_style),
@@ -843,7 +1065,9 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
 
             // Build input2 line with cursor
             let input2_line = if *focused == 1 {
-                let (before, after) = dialog.input2.split_at(dialog.cursor2.min(dialog.input2.len()));
+                let (before, after) = dialog
+                    .input2
+                    .split_at(dialog.cursor2.min(dialog.input2.len()));
                 Line::from(vec![
                     Span::styled(before.to_string(), input2_style),
                     Span::styled("█", input2_style),
@@ -860,14 +1084,21 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
                 Line::from(Span::raw(prompt2.clone())),
                 input2_line,
                 Line::from(""),
-                Line::from(Span::styled("Tab to switch fields", Style::default().fg(Color::DarkGray))),
+                Line::from(Span::styled(
+                    "Tab to switch fields",
+                    Style::default().fg(Color::DarkGray),
+                )),
             ];
 
             let paragraph = Paragraph::new(text);
             frame.render_widget(paragraph, inner);
         }
 
-        DialogType::Select { title, items, selected } => {
+        DialogType::Select {
+            title,
+            items,
+            selected,
+        } => {
             let block = Block::default()
                 .title(format!(" {} ", title))
                 .borders(Borders::ALL)
@@ -912,7 +1143,9 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
                 .enumerate()
                 .map(|(i, (_, (_, display_name)))| {
                     let style = if i == *selected {
-                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
                     } else {
                         Style::default().fg(Color::White)
                     };
@@ -925,7 +1158,13 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             frame.render_widget(list, chunks[2]);
         }
 
-        DialogType::RuleEditor { title, focused_field, match_mode, categories, selected_category } => {
+        DialogType::RuleEditor {
+            title,
+            focused_field,
+            match_mode,
+            categories,
+            selected_category,
+        } => {
             let block = Block::default()
                 .title(format!(" {} ", title))
                 .borders(Borders::ALL)
@@ -935,13 +1174,21 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             frame.render_widget(block, dialog_area);
 
             // Styles for focused/unfocused fields
-            let focused_style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+            let focused_style = Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD);
             let unfocused_style = Style::default().fg(Color::Gray);
             let label_style = Style::default().fg(Color::White);
 
             // Pattern field
-            let pattern_style = if *focused_field == 0 { focused_style } else { unfocused_style };
-            let (before, after) = dialog.input1.split_at(dialog.cursor1.min(dialog.input1.len()));
+            let pattern_style = if *focused_field == 0 {
+                focused_style
+            } else {
+                unfocused_style
+            };
+            let (before, after) = dialog
+                .input1
+                .split_at(dialog.cursor1.min(dialog.input1.len()));
             let pattern_line = if *focused_field == 0 {
                 Line::from(vec![
                     Span::styled(before.to_string(), pattern_style),
@@ -953,12 +1200,20 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             };
 
             // Match mode field
-            let match_style = if *focused_field == 1 { focused_style } else { unfocused_style };
+            let match_style = if *focused_field == 1 {
+                focused_style
+            } else {
+                unfocused_style
+            };
             let substring_prefix = if *match_mode == 0 { "● " } else { "○ " };
             let token_prefix = if *match_mode == 1 { "● " } else { "○ " };
 
             // Category field - show a few categories around the selected one
-            let cat_style = if *focused_field == 2 { focused_style } else { unfocused_style };
+            let cat_style = if *focused_field == 2 {
+                focused_style
+            } else {
+                unfocused_style
+            };
 
             // Build the dialog content
             let mut lines = vec![
@@ -966,7 +1221,10 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
                 pattern_line,
                 Line::from(""),
                 Line::from(Span::styled("Match mode:", label_style)),
-                Line::from(Span::styled(format!("{}Substring", substring_prefix), match_style)),
+                Line::from(Span::styled(
+                    format!("{}Substring", substring_prefix),
+                    match_style,
+                )),
                 Line::from(Span::styled(format!("{}Token", token_prefix), match_style)),
                 Line::from(""),
                 Line::from(Span::styled("Category:", label_style)),
@@ -976,19 +1234,37 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             let start = selected_category.saturating_sub(2);
             let visible_cats: Vec<_> = categories.iter().enumerate().skip(start).take(5).collect();
             for (i, (_, name)) in visible_cats {
-                let prefix = if i == *selected_category { "▸ " } else { "  " };
-                let style = if i == *selected_category { cat_style } else { unfocused_style };
-                lines.push(Line::from(Span::styled(format!("{}{}", prefix, truncate(name, 45)), style)));
+                let prefix = if i == *selected_category {
+                    "▸ "
+                } else {
+                    "  "
+                };
+                let style = if i == *selected_category {
+                    cat_style
+                } else {
+                    unfocused_style
+                };
+                lines.push(Line::from(Span::styled(
+                    format!("{}{}", prefix, truncate(name, 45)),
+                    style,
+                )));
             }
 
             lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled("Tab:Next field  ↑↓:Select  Enter:Confirm", Style::default().fg(Color::DarkGray))));
+            lines.push(Line::from(Span::styled(
+                "Tab:Next field  ↑↓:Select  Enter:Confirm",
+                Style::default().fg(Color::DarkGray),
+            )));
 
             let paragraph = Paragraph::new(lines);
             frame.render_widget(paragraph, inner);
         }
 
-        DialogType::AssetEditor { title, focused_field, selected_type } => {
+        DialogType::AssetEditor {
+            title,
+            focused_field,
+            selected_type,
+        } => {
             let block = Block::default()
                 .title(format!(" {} ", title))
                 .borders(Borders::ALL)
@@ -998,13 +1274,21 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             frame.render_widget(block, dialog_area);
 
             // Styles for focused/unfocused fields
-            let focused_style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+            let focused_style = Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD);
             let unfocused_style = Style::default().fg(Color::Gray);
             let label_style = Style::default().fg(Color::White);
 
             // Name field (input1)
-            let name_style = if *focused_field == 0 { focused_style } else { unfocused_style };
-            let (before, after) = dialog.input1.split_at(dialog.cursor1.min(dialog.input1.len()));
+            let name_style = if *focused_field == 0 {
+                focused_style
+            } else {
+                unfocused_style
+            };
+            let (before, after) = dialog
+                .input1
+                .split_at(dialog.cursor1.min(dialog.input1.len()));
             let name_line = if *focused_field == 0 {
                 Line::from(vec![
                     Span::styled(before.to_string(), name_style),
@@ -1016,12 +1300,22 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             };
 
             // Type field (selection)
-            let type_style = if *focused_field == 1 { focused_style } else { unfocused_style };
+            let type_style = if *focused_field == 1 {
+                focused_style
+            } else {
+                unfocused_style
+            };
             let asset_types = ["Real Estate", "Vehicle", "Collectible", "Other"];
 
             // Value field (input2)
-            let value_style = if *focused_field == 2 { focused_style } else { unfocused_style };
-            let (before2, after2) = dialog.input2.split_at(dialog.cursor2.min(dialog.input2.len()));
+            let value_style = if *focused_field == 2 {
+                focused_style
+            } else {
+                unfocused_style
+            };
+            let (before2, after2) = dialog
+                .input2
+                .split_at(dialog.cursor2.min(dialog.input2.len()));
             let value_line = if *focused_field == 2 {
                 Line::from(vec![
                     Span::styled("$", value_style),
@@ -1047,21 +1341,35 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             // Show asset types with selection indicator
             for (i, type_name) in asset_types.iter().enumerate() {
                 let prefix = if i == *selected_type { "● " } else { "○ " };
-                let style = if i == *selected_type { type_style } else { unfocused_style };
-                lines.push(Line::from(Span::styled(format!("{}{}", prefix, type_name), style)));
+                let style = if i == *selected_type {
+                    type_style
+                } else {
+                    unfocused_style
+                };
+                lines.push(Line::from(Span::styled(
+                    format!("{}{}", prefix, type_name),
+                    style,
+                )));
             }
 
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled("Value:", label_style)));
             lines.push(value_line);
             lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled("Tab:Next field  ↑↓:Select  Enter:Confirm", Style::default().fg(Color::DarkGray))));
+            lines.push(Line::from(Span::styled(
+                "Tab:Next field  ↑↓:Select  Enter:Confirm",
+                Style::default().fg(Color::DarkGray),
+            )));
 
             let paragraph = Paragraph::new(lines);
             frame.render_widget(paragraph, inner);
         }
 
-        DialogType::HoldingEditor { title, focused_field, .. } => {
+        DialogType::HoldingEditor {
+            title,
+            focused_field,
+            ..
+        } => {
             let block = Block::default()
                 .title(format!(" {} ", title))
                 .borders(Borders::ALL)
@@ -1071,13 +1379,21 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             frame.render_widget(block, dialog_area);
 
             // Styles for focused/unfocused fields
-            let focused_style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+            let focused_style = Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD);
             let unfocused_style = Style::default().fg(Color::Gray);
             let label_style = Style::default().fg(Color::White);
 
             // Symbol field (input1)
-            let symbol_style = if *focused_field == 0 { focused_style } else { unfocused_style };
-            let (before1, after1) = dialog.input1.split_at(dialog.cursor1.min(dialog.input1.len()));
+            let symbol_style = if *focused_field == 0 {
+                focused_style
+            } else {
+                unfocused_style
+            };
+            let (before1, after1) = dialog
+                .input1
+                .split_at(dialog.cursor1.min(dialog.input1.len()));
             let symbol_line = if *focused_field == 0 {
                 Line::from(vec![
                     Span::styled(before1.to_string(), symbol_style),
@@ -1089,8 +1405,14 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             };
 
             // Shares field (input2)
-            let shares_style = if *focused_field == 1 { focused_style } else { unfocused_style };
-            let (before2, after2) = dialog.input2.split_at(dialog.cursor2.min(dialog.input2.len()));
+            let shares_style = if *focused_field == 1 {
+                focused_style
+            } else {
+                unfocused_style
+            };
+            let (before2, after2) = dialog
+                .input2
+                .split_at(dialog.cursor2.min(dialog.input2.len()));
             let shares_line = if *focused_field == 1 {
                 Line::from(vec![
                     Span::styled(before2.to_string(), shares_style),
@@ -1102,8 +1424,14 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
             };
 
             // Price field (input3)
-            let price_style = if *focused_field == 2 { focused_style } else { unfocused_style };
-            let (before3, after3) = dialog.input3.split_at(dialog.cursor3.min(dialog.input3.len()));
+            let price_style = if *focused_field == 2 {
+                focused_style
+            } else {
+                unfocused_style
+            };
+            let (before3, after3) = dialog
+                .input3
+                .split_at(dialog.cursor3.min(dialog.input3.len()));
             let price_line = if *focused_field == 2 {
                 Line::from(vec![
                     Span::styled("$", price_style),
@@ -1128,7 +1456,10 @@ fn draw_dialog(frame: &mut Frame, app: &App) {
                 Line::from(Span::styled("Price:", label_style)),
                 price_line,
                 Line::from(""),
-                Line::from(Span::styled("Tab:Next field  Enter:Confirm  Esc:Cancel", Style::default().fg(Color::DarkGray))),
+                Line::from(Span::styled(
+                    "Tab:Next field  Enter:Confirm  Esc:Cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
             ];
 
             let paragraph = Paragraph::new(lines);

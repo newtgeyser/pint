@@ -29,10 +29,16 @@ fn test_assets_sorted_by_type_then_value() {
 
         if type_a == type_b {
             // Within same type, sorted by value descending
-            assert!(val_a >= val_b, "Assets should be sorted by value descending within same type");
+            assert!(
+                val_a >= val_b,
+                "Assets should be sorted by value descending within same type"
+            );
         } else {
             // Different types should be in alphabetical order
-            assert!(type_a <= type_b, "Assets should be sorted by type alphabetically");
+            assert!(
+                type_a <= type_b,
+                "Assets should be sorted by type alphabetically"
+            );
         }
     }
 }
@@ -43,14 +49,21 @@ fn test_real_estate_asset() {
 
     let assets = Asset::find_all(&conn).unwrap();
 
-    let house = assets.iter()
+    let house = assets
+        .iter()
         .find(|a| a.asset_type == "real_estate")
         .expect("Should have real estate asset");
 
     assert_eq!(house.name, "Primary Residence");
     assert_eq!(house.value, Some(55000000)); // $550,000
     assert_eq!(house.cost_basis, Some(35000000)); // $350,000
-    assert!(house.description.as_ref().unwrap().contains("123 Main Street"));
+    assert!(
+        house
+            .description
+            .as_ref()
+            .unwrap()
+            .contains("123 Main Street")
+    );
 }
 
 #[test]
@@ -59,7 +72,8 @@ fn test_vehicle_asset() {
 
     let assets = Asset::find_all(&conn).unwrap();
 
-    let car = assets.iter()
+    let car = assets
+        .iter()
         .find(|a| a.asset_type == "vehicle")
         .expect("Should have vehicle asset");
 
@@ -74,7 +88,8 @@ fn test_collectible_asset() {
 
     let assets = Asset::find_all(&conn).unwrap();
 
-    let art = assets.iter()
+    let art = assets
+        .iter()
         .find(|a| a.asset_type == "collectible")
         .expect("Should have collectible asset");
 
@@ -87,7 +102,10 @@ fn test_asset_value_in_cents() {
     let conn = common::setup_test_db();
 
     let assets = Asset::find_all(&conn).unwrap();
-    let house = assets.iter().find(|a| a.name == "Primary Residence").unwrap();
+    let house = assets
+        .iter()
+        .find(|a| a.name == "Primary Residence")
+        .unwrap();
 
     // Value is stored in cents
     assert_eq!(house.value, Some(55000000)); // $550,000 in cents
@@ -99,7 +117,10 @@ fn test_asset_cost_basis() {
     let conn = common::setup_test_db();
 
     let assets = Asset::find_all(&conn).unwrap();
-    let house = assets.iter().find(|a| a.name == "Primary Residence").unwrap();
+    let house = assets
+        .iter()
+        .find(|a| a.name == "Primary Residence")
+        .unwrap();
 
     assert_eq!(house.cost_basis, Some(35000000)); // $350,000 in cents
     assert_eq!(house.cost_basis_dollars(), Some(350000.0));
@@ -112,7 +133,10 @@ fn test_asset_gain_calculation() {
     let assets = Asset::find_all(&conn).unwrap();
 
     // House: value $550,000, cost $350,000 = $200,000 gain
-    let house = assets.iter().find(|a| a.name == "Primary Residence").unwrap();
+    let house = assets
+        .iter()
+        .find(|a| a.name == "Primary Residence")
+        .unwrap();
     let gain = house.value_dollars().unwrap() - house.cost_basis_dollars().unwrap();
     assert!((gain - 200000.0).abs() < 0.01);
 
@@ -153,10 +177,14 @@ fn test_update_asset_value() {
     conn.execute(
         "UPDATE assets SET value = 2000000 WHERE name = '2020 Toyota Camry'",
         [],
-    ).unwrap();
+    )
+    .unwrap();
 
     let assets = Asset::find_all(&conn).unwrap();
-    let car = assets.iter().find(|a| a.name == "2020 Toyota Camry").unwrap();
+    let car = assets
+        .iter()
+        .find(|a| a.name == "2020 Toyota Camry")
+        .unwrap();
 
     assert_eq!(car.value, Some(2000000)); // $20,000
 }
@@ -167,7 +195,8 @@ fn test_remove_asset() {
 
     let initial_count = Asset::find_all(&conn).unwrap().len();
 
-    conn.execute("DELETE FROM assets WHERE name = 'Art Collection'", []).unwrap();
+    conn.execute("DELETE FROM assets WHERE name = 'Art Collection'", [])
+        .unwrap();
 
     let assets = Asset::find_all(&conn).unwrap();
     assert_eq!(assets.len(), initial_count - 1);
@@ -183,9 +212,7 @@ fn test_total_assets_value() {
 
     let assets = Asset::find_all(&conn).unwrap();
 
-    let total: i64 = assets.iter()
-        .filter_map(|a| a.value)
-        .sum();
+    let total: i64 = assets.iter().filter_map(|a| a.value).sum();
 
     // House: 55,000,000 + Car: 2,200,000 + Art: 1,500,000 = 58,700,000 cents
     assert_eq!(total, 58700000);
@@ -197,9 +224,7 @@ fn test_total_cost_basis() {
 
     let assets = Asset::find_all(&conn).unwrap();
 
-    let total_cost: i64 = assets.iter()
-        .filter_map(|a| a.cost_basis)
-        .sum();
+    let total_cost: i64 = assets.iter().filter_map(|a| a.cost_basis).sum();
 
     // House: 35,000,000 + Car: 2,800,000 + Art: 800,000 = 38,600,000 cents
     assert_eq!(total_cost, 38600000);

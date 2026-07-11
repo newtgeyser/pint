@@ -1,5 +1,8 @@
+pub mod insights;
 pub mod models;
+pub mod reimbursements;
 pub mod schema;
+pub mod uncategorized;
 
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -204,7 +207,11 @@ pub fn find_category_for_description_with_rules(
     None
 }
 
-fn merchant_rule_matches(description_upper: &str, pattern_upper: &str, match_mode: MatchMode) -> bool {
+fn merchant_rule_matches(
+    description_upper: &str,
+    pattern_upper: &str,
+    match_mode: MatchMode,
+) -> bool {
     match match_mode {
         MatchMode::Substring => description_upper.contains(pattern_upper),
         MatchMode::Token => is_token_match(description_upper, pattern_upper),
@@ -214,14 +221,13 @@ fn merchant_rule_matches(description_upper: &str, pattern_upper: &str, match_mod
 /// Check if pattern matches as a token (word boundary on both sides) in the text.
 /// Both arguments should be in the same case (uppercase recommended).
 pub fn is_token_match(text: &str, pattern: &str) -> bool {
-    text.match_indices(pattern)
-        .any(|(idx, _)| {
-            let before = text[..idx].chars().last();
-            let after = text[idx + pattern.len()..].chars().next();
-            let ok_before = before.is_none_or(|c| !c.is_ascii_alphanumeric());
-            let ok_after = after.is_none_or(|c| !c.is_ascii_alphanumeric());
-            ok_before && ok_after
-        })
+    text.match_indices(pattern).any(|(idx, _)| {
+        let before = text[..idx].chars().last();
+        let after = text[idx + pattern.len()..].chars().next();
+        let ok_before = before.is_none_or(|c| !c.is_ascii_alphanumeric());
+        let ok_after = after.is_none_or(|c| !c.is_ascii_alphanumeric());
+        ok_before && ok_after
+    })
 }
 
 pub fn categorize_transaction(conn: &Connection, tx_id: &str, category_id: i64) -> Result<bool> {
@@ -238,8 +244,7 @@ pub fn categorize_transaction(conn: &Connection, tx_id: &str, category_id: i64) 
 /// Create an in-memory database for testing with schema initialized.
 /// This is public so integration tests can use it.
 pub fn open_in_memory() -> Result<Connection> {
-    let conn = Connection::open_in_memory()
-        .context("Failed to create in-memory database")?;
+    let conn = Connection::open_in_memory().context("Failed to create in-memory database")?;
 
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
     schema::create_tables(&conn)?;

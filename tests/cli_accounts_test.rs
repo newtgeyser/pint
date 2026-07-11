@@ -15,11 +15,26 @@ fn test_list_accounts() {
     assert_eq!(accounts.len(), 6);
 
     // Check account types
-    let checking_count = accounts.iter().filter(|a| a.account_type == "checking").count();
-    let savings_count = accounts.iter().filter(|a| a.account_type == "savings").count();
-    let credit_count = accounts.iter().filter(|a| a.account_type == "credit").count();
-    let brokerage_count = accounts.iter().filter(|a| a.account_type == "brokerage").count();
-    let retirement_count = accounts.iter().filter(|a| a.account_type == "retirement").count();
+    let checking_count = accounts
+        .iter()
+        .filter(|a| a.account_type == "checking")
+        .count();
+    let savings_count = accounts
+        .iter()
+        .filter(|a| a.account_type == "savings")
+        .count();
+    let credit_count = accounts
+        .iter()
+        .filter(|a| a.account_type == "credit")
+        .count();
+    let brokerage_count = accounts
+        .iter()
+        .filter(|a| a.account_type == "brokerage")
+        .count();
+    let retirement_count = accounts
+        .iter()
+        .filter(|a| a.account_type == "retirement")
+        .count();
 
     assert_eq!(checking_count, 2); // Main checking + manual cash
     assert_eq!(savings_count, 1);
@@ -79,7 +94,9 @@ fn test_account_not_found() {
 fn test_account_balance() {
     let conn = common::setup_test_db();
 
-    let account = Account::find_by_query(&conn, "ACT-001-CHECKING").unwrap().unwrap();
+    let account = Account::find_by_query(&conn, "ACT-001-CHECKING")
+        .unwrap()
+        .unwrap();
 
     // Balance is $12,500.00 (1250000 cents)
     assert_eq!(account.balance, Some(1250000));
@@ -90,7 +107,9 @@ fn test_account_balance() {
 fn test_credit_card_negative_balance() {
     let conn = common::setup_test_db();
 
-    let account = Account::find_by_query(&conn, "ACT-003-CREDIT").unwrap().unwrap();
+    let account = Account::find_by_query(&conn, "ACT-003-CREDIT")
+        .unwrap()
+        .unwrap();
 
     // Credit card balance is -$1,850.00
     assert_eq!(account.balance, Some(-185000));
@@ -102,11 +121,15 @@ fn test_manual_account_flag() {
     let conn = common::setup_test_db();
 
     // Manual account
-    let account = Account::find_by_query(&conn, "ACT-006-MANUAL").unwrap().unwrap();
+    let account = Account::find_by_query(&conn, "ACT-006-MANUAL")
+        .unwrap()
+        .unwrap();
     assert!(account.manual);
 
     // Non-manual account
-    let account = Account::find_by_query(&conn, "ACT-001-CHECKING").unwrap().unwrap();
+    let account = Account::find_by_query(&conn, "ACT-001-CHECKING")
+        .unwrap()
+        .unwrap();
     assert!(!account.manual);
 }
 
@@ -122,13 +145,16 @@ fn test_add_manual_account() {
         "INSERT INTO accounts (id, name, account_type, currency, manual, created_at, updated_at)
          VALUES ('manual-test-123', 'Test Account', 'checking', 'USD', 1, ?1, ?1)",
         [now],
-    ).unwrap();
+    )
+    .unwrap();
 
     let new_count = common::count_records(&conn, "accounts");
     assert_eq!(new_count, initial_count + 1);
 
     // Verify the new account
-    let account = Account::find_by_query(&conn, "manual-test-123").unwrap().unwrap();
+    let account = Account::find_by_query(&conn, "manual-test-123")
+        .unwrap()
+        .unwrap();
     assert_eq!(account.name, "Test Account");
     assert!(account.manual);
 }
@@ -138,27 +164,36 @@ fn test_remove_account_cascades_transactions() {
     let conn = common::setup_test_db();
 
     // Count transactions for the checking account
-    let tx_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM transactions WHERE account_id = 'ACT-001-CHECKING'",
-        [],
-        |row| row.get(0),
-    ).unwrap();
+    let tx_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM transactions WHERE account_id = 'ACT-001-CHECKING'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
     assert!(tx_count > 0);
 
     // Delete the account and its transactions
-    conn.execute("DELETE FROM transactions WHERE account_id = 'ACT-001-CHECKING'", []).unwrap();
-    conn.execute("DELETE FROM accounts WHERE id = 'ACT-001-CHECKING'", []).unwrap();
+    conn.execute(
+        "DELETE FROM transactions WHERE account_id = 'ACT-001-CHECKING'",
+        [],
+    )
+    .unwrap();
+    conn.execute("DELETE FROM accounts WHERE id = 'ACT-001-CHECKING'", [])
+        .unwrap();
 
     // Verify account is gone
     let account = Account::find_by_query(&conn, "ACT-001-CHECKING").unwrap();
     assert!(account.is_none());
 
     // Verify transactions are gone
-    let tx_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM transactions WHERE account_id = 'ACT-001-CHECKING'",
-        [],
-        |row| row.get(0),
-    ).unwrap();
+    let tx_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM transactions WHERE account_id = 'ACT-001-CHECKING'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
     assert_eq!(tx_count, 0);
 }
 
@@ -170,9 +205,12 @@ fn test_set_account_type() {
     conn.execute(
         "UPDATE accounts SET account_type = 'savings' WHERE id = 'ACT-001-CHECKING'",
         [],
-    ).unwrap();
+    )
+    .unwrap();
 
-    let account = Account::find_by_query(&conn, "ACT-001-CHECKING").unwrap().unwrap();
+    let account = Account::find_by_query(&conn, "ACT-001-CHECKING")
+        .unwrap()
+        .unwrap();
     assert_eq!(account.account_type, "savings");
 }
 
@@ -184,9 +222,12 @@ fn test_set_account_nickname() {
     conn.execute(
         "UPDATE accounts SET nickname = 'My Primary' WHERE id = 'ACT-001-CHECKING'",
         [],
-    ).unwrap();
+    )
+    .unwrap();
 
-    let account = Account::find_by_query(&conn, "ACT-001-CHECKING").unwrap().unwrap();
+    let account = Account::find_by_query(&conn, "ACT-001-CHECKING")
+        .unwrap()
+        .unwrap();
     assert_eq!(account.nickname, Some("My Primary".to_string()));
     assert_eq!(account.display_name(), "My Primary");
 
@@ -194,9 +235,12 @@ fn test_set_account_nickname() {
     conn.execute(
         "UPDATE accounts SET nickname = NULL WHERE id = 'ACT-001-CHECKING'",
         [],
-    ).unwrap();
+    )
+    .unwrap();
 
-    let account = Account::find_by_query(&conn, "ACT-001-CHECKING").unwrap().unwrap();
+    let account = Account::find_by_query(&conn, "ACT-001-CHECKING")
+        .unwrap()
+        .unwrap();
     assert!(account.nickname.is_none());
     assert_eq!(account.display_name(), "Primary Checking Account");
 }
@@ -223,10 +267,7 @@ fn test_total_balance_calculation() {
 
     let accounts = Account::find_all(&conn).unwrap();
 
-    let total: i64 = accounts
-        .iter()
-        .filter_map(|a| a.balance)
-        .sum();
+    let total: i64 = accounts.iter().filter_map(|a| a.balance).sum();
 
     // Expected total from synthetic data:
     // Checking: 1,250,000 + Savings: 2,500,000 + Credit: -185,000 +

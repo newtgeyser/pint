@@ -116,6 +116,25 @@ enum Commands {
     /// Show detected recurring transactions
     Recurring,
 
+    /// Show net worth history
+    History {
+        /// Number of daily snapshots to show
+        #[arg(short, long, default_value = "30")]
+        limit: usize,
+        /// Capture or refresh today's snapshot before listing
+        #[arg(long)]
+        capture: bool,
+    },
+
+    /// Show stale or incomplete financial data
+    Health,
+
+    /// Review and bulk-categorize uncategorized merchants
+    Review {
+        #[command(subcommand)]
+        action: Option<ReviewAction>,
+    },
+
     /// Manage reimbursing entities (employer, LLC, etc.)
     Reimbursers {
         #[command(subcommand)]
@@ -147,6 +166,56 @@ enum Commands {
         /// Filter by reimburser name
         #[arg(short, long)]
         entity: Option<String>,
+    },
+
+    /// Reconcile reimbursement payments and outstanding balances
+    Reimbursements {
+        #[command(subcommand)]
+        action: ReimbursementsAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ReimbursementsAction {
+    /// Show outstanding reimbursements by age and entity
+    Aging,
+    /// Record a reimbursement payment, optionally allocating it to expenses
+    Payment {
+        entity: String,
+        amount: f64,
+        /// Payment date (YYYY-MM-DD)
+        #[arg(long)]
+        date: Option<String>,
+        /// Imported credit transaction representing this payment
+        #[arg(long)]
+        source_transaction: Option<String>,
+        #[arg(long)]
+        reference: Option<String>,
+        #[arg(long)]
+        note: Option<String>,
+        /// Allocate payment using TX_ID=AMOUNT; may be repeated
+        #[arg(long = "allocate")]
+        allocations: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ReviewAction {
+    /// List uncategorized merchant groups
+    List {
+        #[arg(short, long, default_value = "50")]
+        limit: Option<usize>,
+    },
+    /// Categorize every uncategorized transaction in a merchant group
+    Categorize {
+        merchant: String,
+        category: String,
+        /// Create a merchant rule for future transactions
+        #[arg(long)]
+        rule: bool,
+        /// Override the rule pattern (defaults to merchant)
+        #[arg(long, requires = "rule")]
+        pattern: Option<String>,
     },
 }
 
@@ -371,7 +440,11 @@ fn main() -> Result<()> {
 
         Commands::Setup => commands::setup::run(),
 
-        Commands::Sync { days, backfill, from } => {
+        Commands::Sync {
+            days,
+            backfill,
+            from,
+        } => {
             if backfill {
                 let from = from
                     .as_ref()
@@ -396,12 +469,11 @@ fn main() -> Result<()> {
             Some(AccountsAction::Add { name, account_type }) => {
                 commands::accounts::add(&name, &account_type)
             }
-            Some(AccountsAction::Remove { account }) => {
-                commands::accounts::remove(&account)
-            }
-            Some(AccountsAction::SetType { account, account_type }) => {
-                commands::accounts::set_type(&account, &account_type)
-            }
+            Some(AccountsAction::Remove { account }) => commands::accounts::remove(&account),
+            Some(AccountsAction::SetType {
+                account,
+                account_type,
+            }) => commands::accounts::set_type(&account, &account_type),
             Some(AccountsAction::Rename { account, nickname }) => {
                 commands::accounts::set_nickname(&account, nickname.as_deref())
             }
@@ -451,26 +523,25 @@ fn main() -> Result<()> {
                 price,
                 cost,
                 description,
-            } => {
-                commands::holdings::add(&account, &symbol, &shares, price, cost, description.as_deref())
-            }
+            } => commands::holdings::add(
+                &account,
+                &symbol,
+                &shares,
+                price,
+                cost,
+                description.as_deref(),
+            ),
             HoldingsAction::Update {
                 holding,
                 shares,
                 price,
                 cost,
-            } => {
-                commands::holdings::update(&holding, shares.as_deref(), price, cost)
-            }
-            HoldingsAction::Remove { holding } => {
-                commands::holdings::remove(&holding)
-            }
+            } => commands::holdings::update(&holding, shares.as_deref(), price, cost),
+            HoldingsAction::Remove { holding } => commands::holdings::remove(&holding),
             HoldingsAction::Import { file, account } => {
                 commands::import_holdings::run(&file, &account)
             }
-            HoldingsAction::UpdatePrices => {
-                commands::prices::run()
-            }
+            HoldingsAction::UpdatePrices => commands::prices::run(),
         },
 
         Commands::Assets { action } => match action {
@@ -488,7 +559,14 @@ fn main() -> Result<()> {
                     .map(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d"))
                     .transpose()?
                     .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp());
-                commands::assets::add(&name, &asset_type, value, cost, description.as_deref(), acquired_ts)
+                commands::assets::add(
+                    &name,
+                    &asset_type,
+                    value,
+                    cost,
+                    description.as_deref(),
+                    acquired_ts,
+                )
             }
             Some(AssetsAction::Update {
                 id,
@@ -497,9 +575,14 @@ fn main() -> Result<()> {
                 cost,
                 description,
                 asset_type,
-            }) => {
-                commands::assets::update(id, name.as_deref(), value, cost, description.as_deref(), asset_type.as_deref())
-            }
+            }) => commands::assets::update(
+                id,
+                name.as_deref(),
+                value,
+                cost,
+                description.as_deref(),
+                asset_type.as_deref(),
+            ),
             Some(AssetsAction::Remove { id }) => commands::assets::remove(id),
         },
 
@@ -517,18 +600,35 @@ fn main() -> Result<()> {
 
         Commands::Points { action } => match action {
             None => commands::points::run(),
-            Some(PointsAction::Set { program, points, note }) => {
-                commands::points::set(&program, points, note.as_deref())
-            }
-            Some(PointsAction::Add { program, points, note }) => {
-                commands::points::add(&program, points, note.as_deref())
-            }
-            Some(PointsAction::Remove { program }) => {
-                commands::points::remove(&program)
-            }
+            Some(PointsAction::Set {
+                program,
+                points,
+                note,
+            }) => commands::points::set(&program, points, note.as_deref()),
+            Some(PointsAction::Add {
+                program,
+                points,
+                note,
+            }) => commands::points::add(&program, points, note.as_deref()),
+            Some(PointsAction::Remove { program }) => commands::points::remove(&program),
         },
 
         Commands::Recurring => commands::recurring::run(),
+
+        Commands::History { limit, capture } => commands::insights::history(limit, capture),
+
+        Commands::Health => commands::insights::health(),
+
+        Commands::Review { action } => match action {
+            None => commands::review::list(Some(50)),
+            Some(ReviewAction::List { limit }) => commands::review::list(limit),
+            Some(ReviewAction::Categorize {
+                merchant,
+                category,
+                rule,
+                pattern,
+            }) => commands::review::categorize(&merchant, &category, rule, pattern.as_deref()),
+        },
 
         Commands::Reimbursers { action } => match action {
             None => commands::reimbursers::run(),
@@ -567,5 +667,26 @@ fn main() -> Result<()> {
             };
             commands::reimburse::list(filter, entity.as_deref())
         }
+
+        Commands::Reimbursements { action } => match action {
+            ReimbursementsAction::Aging => commands::settlements::aging(),
+            ReimbursementsAction::Payment {
+                entity,
+                amount,
+                date,
+                source_transaction,
+                reference,
+                note,
+                allocations,
+            } => commands::settlements::record_payment(
+                &entity,
+                amount,
+                date.as_deref(),
+                source_transaction.as_deref(),
+                reference.as_deref(),
+                note.as_deref(),
+                &allocations,
+            ),
+        },
     }
 }

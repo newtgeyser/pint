@@ -7,7 +7,7 @@ use anyhow::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::prelude::*;
 
@@ -178,7 +178,7 @@ fn handle_view_keys(app: &mut App, key: KeyCode) -> Result<()> {
         View::Holdings => match key {
             KeyCode::Char('e') | KeyCode::Enter => app.show_edit_holding_dialog(),
             _ => {}
-        }
+        },
         View::Recurring => {
             // Recurring-specific keys can be added here
         }

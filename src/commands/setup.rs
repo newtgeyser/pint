@@ -1,8 +1,8 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::io::{self, Write};
 
-use crate::{config, db, simplefin::SimpleFin};
 use super::rules;
+use crate::{config, db, simplefin::SimpleFin};
 
 const ACCESS_URL_KEY: &str = "simplefin_access_url";
 
@@ -18,11 +18,8 @@ pub fn run() -> Result<()> {
     }
 
     // Import default rules if rules table is empty
-    let rule_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM merchant_rules",
-        [],
-        |row| row.get(0),
-    )?;
+    let rule_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM merchant_rules", [], |row| row.get(0))?;
 
     if rule_count == 0 {
         let (rules_imported, categories_created) = rules::import_default_rules(&conn)?;

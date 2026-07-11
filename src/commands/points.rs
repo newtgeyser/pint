@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::Utc;
 
 use crate::db::{self, models::RewardPoints};
@@ -24,14 +24,13 @@ pub fn run() -> Result<()> {
     let programs = RewardPoints::find_all(&conn)?;
 
     if programs.is_empty() {
-        println!("No reward points programs. Use 'pint points add' or 'pint points set' to add one.");
+        println!(
+            "No reward points programs. Use 'pint points add' or 'pint points set' to add one."
+        );
         return Ok(());
     }
 
-    println!(
-        "{:<4} {:<32} {:>12}  {}",
-        "ID", "PROGRAM", "POINTS", "NOTE"
-    );
+    println!("{:<4} {:<32} {:>12}  {}", "ID", "PROGRAM", "POINTS", "NOTE");
     println!("{}", "-".repeat(70));
 
     let mut total: i64 = 0;
@@ -49,10 +48,7 @@ pub fn run() -> Result<()> {
     }
 
     println!("{}", "-".repeat(70));
-    println!(
-        "{:<4} {:<32} {:>12}",
-        "", "TOTAL", format_points(total),
-    );
+    println!("{:<4} {:<32} {:>12}", "", "TOTAL", format_points(total),);
 
     Ok(())
 }

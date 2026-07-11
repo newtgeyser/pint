@@ -2,9 +2,9 @@
 
 mod common;
 
-use pint::db::{self, MatchMode};
-use pint::db::models::TransactionRow;
 use pint::commands::rules::auto_categorize_all;
+use pint::db::models::TransactionRow;
+use pint::db::{self, MatchMode};
 
 // =============================================================================
 // Auto-categorize tests
@@ -23,12 +23,17 @@ fn test_auto_categorize_uncategorized_transactions() {
     ).unwrap();
 
     // Count uncategorized before
-    let uncategorized_before: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL",
-        [],
-        |row| row.get(0),
-    ).unwrap();
-    assert!(uncategorized_before > 0, "Should have uncategorized transactions");
+    let uncategorized_before: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(
+        uncategorized_before > 0,
+        "Should have uncategorized transactions"
+    );
 
     // Run auto-categorization
     let categorized = auto_categorize_all(&conn).unwrap();
@@ -37,14 +42,18 @@ fn test_auto_categorize_uncategorized_transactions() {
     assert!(categorized > 0, "Should have categorized some transactions");
 
     // Count uncategorized after
-    let uncategorized_after: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL",
-        [],
-        |row| row.get(0),
-    ).unwrap();
+    let uncategorized_after: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
 
-    assert!(uncategorized_after < uncategorized_before,
-        "Should have fewer uncategorized transactions after auto-categorize");
+    assert!(
+        uncategorized_after < uncategorized_before,
+        "Should have fewer uncategorized transactions after auto-categorize"
+    );
 
     // Verify the Starbucks transaction was categorized as Dining
     let txs = TransactionRow::find_all(&conn, None, 1000).unwrap();
@@ -70,7 +79,10 @@ fn test_auto_categorize_applies_substring_rules() {
 
     // Run auto-categorization
     let categorized = auto_categorize_all(&conn).unwrap();
-    assert!(categorized >= 1, "Should categorize at least the Amazon transaction");
+    assert!(
+        categorized >= 1,
+        "Should categorize at least the Amazon transaction"
+    );
 
     // Verify it was categorized
     let txs = TransactionRow::find_all(&conn, None, 1000).unwrap();
@@ -105,18 +117,21 @@ fn test_auto_categorize_skips_already_categorized() {
     let conn = common::setup_test_db();
 
     // Get count of categorized transactions before (just to verify test setup)
-    let _categorized_before: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM transactions WHERE category_id IS NOT NULL",
-        [],
-        |row| row.get(0),
-    ).unwrap();
+    let _categorized_before: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM transactions WHERE category_id IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
 
     // Run auto-categorization
     auto_categorize_all(&conn).unwrap();
 
     // Already categorized transactions should not be affected
     // (their category shouldn't change)
-    let mortgage_tx = TransactionRow::find_all(&conn, None, 1000).unwrap()
+    let mortgage_tx = TransactionRow::find_all(&conn, None, 1000)
+        .unwrap()
         .into_iter()
         .find(|t| t.description.contains("WELLS FARGO"))
         .unwrap();
@@ -153,7 +168,8 @@ fn test_auto_categorize_with_no_rules() {
         "INSERT INTO accounts (id, name, account_type, currency, manual, created_at, updated_at)
          VALUES ('ACT-TEST', 'Test Account', 'checking', 'USD', 0, ?1, ?1)",
         [now],
-    ).unwrap();
+    )
+    .unwrap();
     conn.execute(
         "INSERT INTO transactions (id, account_id, posted, amount, description, pending, category_id, created_at, updated_at)
          VALUES ('TX-TEST', 'ACT-TEST', ?1, -1000, 'TEST MERCHANT', 0, NULL, ?1, ?1)",
@@ -208,7 +224,10 @@ fn test_recategorize_transaction() {
 
     // Find a transaction already categorized as Mortgage
     let txs = TransactionRow::find_all(&conn, None, 1000).unwrap();
-    let mortgage_tx = txs.iter().find(|t| t.category.as_deref() == Some("Mortgage")).unwrap();
+    let mortgage_tx = txs
+        .iter()
+        .find(|t| t.category.as_deref() == Some("Mortgage"))
+        .unwrap();
     let tx_id = mortgage_tx.id.clone();
 
     // Recategorize as Entertainment
@@ -242,30 +261,26 @@ fn test_get_existing_category() {
 fn test_create_new_category() {
     let conn = common::setup_test_db();
 
-    let initial_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM categories",
-        [],
-        |row| row.get(0),
-    ).unwrap();
+    let initial_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM categories", [], |row| row.get(0))
+        .unwrap();
 
     // Create a new category
     let id = db::get_or_create_category(&conn, "Pets").unwrap();
     assert!(id > 0);
 
     // Verify it was created
-    let new_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM categories",
-        [],
-        |row| row.get(0),
-    ).unwrap();
+    let new_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM categories", [], |row| row.get(0))
+        .unwrap();
     assert_eq!(new_count, initial_count + 1);
 
     // Verify we can find it
-    let name: String = conn.query_row(
-        "SELECT name FROM categories WHERE id = ?1",
-        [id],
-        |row| row.get(0),
-    ).unwrap();
+    let name: String = conn
+        .query_row("SELECT name FROM categories WHERE id = ?1", [id], |row| {
+            row.get(0)
+        })
+        .unwrap();
     assert_eq!(name, "Pets");
 }
 
@@ -293,7 +308,8 @@ fn test_add_substring_rule() {
     let shopping_id = common::get_category_id(&conn, "Shopping").unwrap();
 
     // Add a new rule
-    db::upsert_merchant_rule_with_mode(&conn, "walmart", shopping_id, MatchMode::Substring).unwrap();
+    db::upsert_merchant_rule_with_mode(&conn, "walmart", shopping_id, MatchMode::Substring)
+        .unwrap();
 
     // Verify it exists (pattern should be uppercased)
     let rules = db::list_merchant_rules(&conn).unwrap();
@@ -324,7 +340,8 @@ fn test_update_rule_category() {
 
     // NETFLIX rule exists, change its category
     let entertainment_id = common::get_category_id(&conn, "Entertainment").unwrap();
-    db::upsert_merchant_rule_with_mode(&conn, "NETFLIX", entertainment_id, MatchMode::Substring).unwrap();
+    db::upsert_merchant_rule_with_mode(&conn, "NETFLIX", entertainment_id, MatchMode::Substring)
+        .unwrap();
 
     // Verify the update
     let rules = db::list_merchant_rules(&conn).unwrap();
@@ -353,7 +370,8 @@ fn test_rule_pattern_normalized() {
     let shopping_id = common::get_category_id(&conn, "Shopping").unwrap();
 
     // Add rule with lowercase and whitespace
-    db::upsert_merchant_rule_with_mode(&conn, "  best buy  ", shopping_id, MatchMode::Substring).unwrap();
+    db::upsert_merchant_rule_with_mode(&conn, "  best buy  ", shopping_id, MatchMode::Substring)
+        .unwrap();
 
     // Verify it's normalized (uppercase, trimmed)
     let rules = db::list_merchant_rules(&conn).unwrap();
@@ -372,7 +390,8 @@ fn test_find_category_for_description_substring() {
     let rules = db::list_merchant_rules(&conn).unwrap();
 
     // Should match Netflix (substring)
-    let category_id = db::find_category_for_description_with_rules("NETFLIX STREAMING SERVICE", &rules);
+    let category_id =
+        db::find_category_for_description_with_rules("NETFLIX STREAMING SERVICE", &rules);
     assert!(category_id.is_some());
 
     let subs_id = common::get_category_id(&conn, "Subscriptions").unwrap();
@@ -429,7 +448,8 @@ fn test_find_category_no_match() {
 
     let rules = db::list_merchant_rules(&conn).unwrap();
 
-    let category_id = db::find_category_for_description_with_rules("COMPLETELY UNKNOWN MERCHANT", &rules);
+    let category_id =
+        db::find_category_for_description_with_rules("COMPLETELY UNKNOWN MERCHANT", &rules);
     assert!(category_id.is_none());
 }
 

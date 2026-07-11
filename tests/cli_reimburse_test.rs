@@ -118,9 +118,11 @@ fn test_find_reimbursable_filters() {
         TransactionRow::find_reimbursable(&conn, ReimbursableFilter::All, Some("Employer"))
             .unwrap();
     assert_eq!(employer_rows.len(), 2);
-    assert!(employer_rows
-        .iter()
-        .all(|r| r.reimburser.as_deref() == Some("Employer")));
+    assert!(
+        employer_rows
+            .iter()
+            .all(|r| r.reimburser.as_deref() == Some("Employer"))
+    );
 
     // Combined filter: pending + entity
     let employer_pending =

@@ -2,8 +2,11 @@ use anyhow::{Context, Result};
 use chrono::{Duration, NaiveDate, TimeZone, Utc};
 use rusqlite::Connection;
 
-use crate::{db, simplefin::{SimpleFin, AccountSet}};
 use super::{prices, rules};
+use crate::{
+    db,
+    simplefin::{AccountSet, SimpleFin},
+};
 
 use super::setup::get_access_url;
 
@@ -20,7 +23,11 @@ pub struct SyncStats {
 
 impl SyncStats {
     pub fn summary(&self) -> String {
-        let tx_word = if self.inserted == 1 { "transaction" } else { "transactions" };
+        let tx_word = if self.inserted == 1 {
+            "transaction"
+        } else {
+            "transactions"
+        };
         let mut summary = format!(
             "Synced {} accounts, {} new {}",
             self.accounts, self.inserted, tx_word
@@ -48,6 +55,7 @@ pub fn run(days: u32) -> Result<()> {
     }
     auto_categorize(&conn)?;
     update_manual_prices(&conn)?;
+    crate::db::insights::NetWorthSnapshot::capture(&conn)?;
     Ok(())
 }
 
@@ -121,10 +129,7 @@ pub fn run_backfill(from: Option<NaiveDate>) -> Result<()> {
 
         let stats = import_accounts(&conn, &account_set)?;
 
-        println!(
-            "    -> {} new, {} modified",
-            stats.inserted, stats.modified
-        );
+        println!("    -> {} new, {} modified", stats.inserted, stats.modified);
 
         total_inserted += stats.inserted;
         total_modified += stats.modified;
@@ -140,6 +145,7 @@ pub fn run_backfill(from: Option<NaiveDate>) -> Result<()> {
 
     auto_categorize(&conn)?;
     update_manual_prices(&conn)?;
+    crate::db::insights::NetWorthSnapshot::capture(&conn)?;
     Ok(())
 }
 
@@ -299,15 +305,12 @@ fn import_holding(
 /// Warn about accounts that exist in the database but were not returned by SimpleFIN.
 /// This catches silently disconnected bank connections.
 fn check_missing_accounts(conn: &Connection, account_set: &AccountSet) -> Result<Vec<String>> {
-    let returned_ids: std::collections::HashSet<&str> = account_set
-        .accounts
-        .iter()
-        .map(|a| a.id.as_str())
-        .collect();
+    let returned_ids: std::collections::HashSet<&str> =
+        account_set.accounts.iter().map(|a| a.id.as_str()).collect();
 
     let mut stmt = conn.prepare(
         "SELECT id, COALESCE(nickname, name) as display_name, institution
-         FROM accounts WHERE manual = 0"
+         FROM accounts WHERE manual = 0",
     )?;
     let missing: Vec<String> = stmt
         .query_map([], |row| {
@@ -319,11 +322,15 @@ fn check_missing_accounts(conn: &Connection, account_set: &AccountSet) -> Result
         })?
         .filter_map(|r| r.ok())
         .filter(|(id, _, _)| !returned_ids.contains(id.as_str()))
-        .map(|(_, name, institution)| {
-            match institution {
-                Some(inst) => format!("Account not returned by SimpleFIN: {} ({}). Connection may need attention.", name, inst),
-                None => format!("Account not returned by SimpleFIN: {}. Connection may need attention.", name),
-            }
+        .map(|(_, name, institution)| match institution {
+            Some(inst) => format!(
+                "Account not returned by SimpleFIN: {} ({}). Connection may need attention.",
+                name, inst
+            ),
+            None => format!(
+                "Account not returned by SimpleFIN: {}. Connection may need attention.",
+                name
+            ),
         })
         .collect();
 
@@ -341,7 +348,10 @@ fn auto_categorize(conn: &Connection) -> Result<()> {
 fn update_manual_prices(conn: &Connection) -> Result<()> {
     let stats = prices::run_with_conn(conn)?;
     if stats.updated > 0 {
-        println!("Updated {} holding prices from Yahoo Finance", stats.updated);
+        println!(
+            "Updated {} holding prices from Yahoo Finance",
+            stats.updated
+        );
     }
     Ok(())
 }

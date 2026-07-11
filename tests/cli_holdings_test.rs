@@ -24,7 +24,10 @@ fn test_holdings_sorted_by_market_value() {
     for i in 0..holdings.len() - 1 {
         let val_a = holdings[i].market_value.unwrap_or(0);
         let val_b = holdings[i + 1].market_value.unwrap_or(0);
-        assert!(val_a >= val_b, "Holdings should be sorted by market value descending");
+        assert!(
+            val_a >= val_b,
+            "Holdings should be sorted by market value descending"
+        );
     }
 }
 
@@ -83,7 +86,10 @@ fn test_holding_price_in_cents() {
     let holdings = Holding::find_all(&conn).unwrap();
 
     // Find VTI (price should be $225.00 = 22500 cents)
-    let vti = holdings.iter().find(|h| h.symbol.as_deref() == Some("VTI")).unwrap();
+    let vti = holdings
+        .iter()
+        .find(|h| h.symbol.as_deref() == Some("VTI"))
+        .unwrap();
 
     assert_eq!(vti.price, Some(22500));
     assert_eq!(vti.price_dollars(), Some(225.0));
@@ -96,7 +102,10 @@ fn test_holding_market_value() {
     let holdings = Holding::find_all(&conn).unwrap();
 
     // Find VTI (50 shares @ $225 = $11,250.00 market value)
-    let vti = holdings.iter().find(|h| h.symbol.as_deref() == Some("VTI")).unwrap();
+    let vti = holdings
+        .iter()
+        .find(|h| h.symbol.as_deref() == Some("VTI"))
+        .unwrap();
 
     assert_eq!(vti.market_value, Some(1125000)); // in cents
     assert_eq!(vti.market_value_dollars(), Some(11250.0));
@@ -109,7 +118,10 @@ fn test_holding_cost_basis() {
     let holdings = Holding::find_all(&conn).unwrap();
 
     // Find VTI (cost basis $10,000)
-    let vti = holdings.iter().find(|h| h.symbol.as_deref() == Some("VTI")).unwrap();
+    let vti = holdings
+        .iter()
+        .find(|h| h.symbol.as_deref() == Some("VTI"))
+        .unwrap();
 
     assert_eq!(vti.cost_basis, Some(1000000)); // in cents
     assert_eq!(vti.cost_basis_dollars(), Some(10000.0));
@@ -122,7 +134,10 @@ fn test_holding_gain_calculation() {
     let holdings = Holding::find_all(&conn).unwrap();
 
     // VTI: market value $11,250, cost basis $10,000 = $1,250 gain
-    let vti = holdings.iter().find(|h| h.symbol.as_deref() == Some("VTI")).unwrap();
+    let vti = holdings
+        .iter()
+        .find(|h| h.symbol.as_deref() == Some("VTI"))
+        .unwrap();
 
     let gain = vti.market_value_dollars().unwrap() - vti.cost_basis_dollars().unwrap();
     assert!((gain - 1250.0).abs() < 0.01);
@@ -135,11 +150,17 @@ fn test_holding_shares() {
     let holdings = Holding::find_all(&conn).unwrap();
 
     // VTI has 50 shares
-    let vti = holdings.iter().find(|h| h.symbol.as_deref() == Some("VTI")).unwrap();
+    let vti = holdings
+        .iter()
+        .find(|h| h.symbol.as_deref() == Some("VTI"))
+        .unwrap();
     assert_eq!(vti.shares, "50.000");
 
     // BND has 100 shares
-    let bnd = holdings.iter().find(|h| h.symbol.as_deref() == Some("BND")).unwrap();
+    let bnd = holdings
+        .iter()
+        .find(|h| h.symbol.as_deref() == Some("BND"))
+        .unwrap();
     assert_eq!(bnd.shares, "100.000");
 }
 
@@ -149,8 +170,14 @@ fn test_holding_description() {
 
     let holdings = Holding::find_all(&conn).unwrap();
 
-    let vti = holdings.iter().find(|h| h.symbol.as_deref() == Some("VTI")).unwrap();
-    assert_eq!(vti.description, Some("Vanguard Total Stock Market ETF".to_string()));
+    let vti = holdings
+        .iter()
+        .find(|h| h.symbol.as_deref() == Some("VTI"))
+        .unwrap();
+    assert_eq!(
+        vti.description,
+        Some("Vanguard Total Stock Market ETF".to_string())
+    );
 }
 
 #[test]
@@ -184,7 +211,8 @@ fn test_update_holding_price() {
     conn.execute(
         "UPDATE holdings SET price = 23000, market_value = 1150000 WHERE id = 'HOLD-001'",
         [],
-    ).unwrap();
+    )
+    .unwrap();
 
     let holding = Holding::find_by_query(&conn, "HOLD-001").unwrap().unwrap();
     assert_eq!(holding.price_dollars(), Some(230.0));
@@ -197,7 +225,8 @@ fn test_remove_holding() {
 
     let initial_count = Holding::find_all(&conn).unwrap().len();
 
-    conn.execute("DELETE FROM holdings WHERE id = 'HOLD-001'", []).unwrap();
+    conn.execute("DELETE FROM holdings WHERE id = 'HOLD-001'", [])
+        .unwrap();
 
     let holdings = Holding::find_all(&conn).unwrap();
     assert_eq!(holdings.len(), initial_count - 1);
@@ -213,9 +242,7 @@ fn test_total_holdings_value() {
 
     let holdings = Holding::find_all(&conn).unwrap();
 
-    let total: i64 = holdings.iter()
-        .filter_map(|h| h.market_value)
-        .sum();
+    let total: i64 = holdings.iter().filter_map(|h| h.market_value).sum();
 
     // Brokerage: 1,125,000 + 435,000 + 720,000 + 437,500 = 2,717,500
     // 401k: 2,700,000 + 210,000 + 450,000 = 3,360,000
